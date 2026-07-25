@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bonanza Cancún — SUP y aguas abiertas</title>
+<style>
+  .viz-root{
+    color-scheme: light;
+    --surface-1:#fcfcfb; --page:#f9f9f7;
+    --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#898781;
+    --grid:#e1e0d9; --baseline:#c3c2b7; --ring:rgba(11,11,11,0.10);
+    --s-wind:#2a78d6; --s-gust:#eb6834; --s-wave:#1baf7a; --s-swell:#eda100; --s-tide:#4a3aa7;
+    --st-good:#0ca30c; --st-warn:#fab219; --st-serious:#ec835a; --st-critical:#d03b3b;
+    --accent-wash:rgba(42,120,214,0.07);
+    --night-wash:rgba(11,11,11,0.045);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:where(:not([data-theme="light"])) .viz-root{
+      color-scheme: dark;
+      --surface-1:#1a1a19; --page:#0d0d0d;
+      --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#898781;
+      --grid:#2c2c2a; --baseline:#383835; --ring:rgba(255,255,255,0.10);
+      --s-wind:#3987e5; --s-gust:#d95926; --s-wave:#199e70; --s-swell:#c98500; --s-tide:#9085e9;
+      --accent-wash:rgba(57,135,229,0.10);
+      --night-wash:rgba(255,255,255,0.05);
+    }
+  }
+  :root[data-theme="dark"] .viz-root{
+    color-scheme: dark;
+    --surface-1:#1a1a19; --page:#0d0d0d;
+    --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#898781;
+    --grid:#2c2c2a; --baseline:#383835; --ring:rgba(255,255,255,0.10);
+    --s-wind:#3987e5; --s-gust:#d95926; --s-wave:#199e70; --s-swell:#c98500; --s-tide:#9085e9;
+    --accent-wash:rgba(57,135,229,0.10);
+    --night-wash:rgba(255,255,255,0.05);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.45}
+  .viz-root{background:var(--page);color:var(--text-primary);min-height:100vh}
+  .wrap{max-width:1060px;margin:0 auto;padding:20px 18px 48px}
+  a{color:var(--s-wind);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  header.topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+  .title h1{font-size:21px;margin:0 0 2px;font-weight:650;letter-spacing:-0.01em}
+  .title p{margin:0;color:var(--text-secondary);font-size:13px}
+  .topbtns{display:flex;gap:8px;align-items:center}
+  button.ghost{background:var(--surface-1);border:1px solid var(--ring);color:var(--text-secondary);
+    border-radius:8px;padding:6px 11px;font:inherit;font-size:13px;cursor:pointer}
+  button.ghost:hover{color:var(--text-primary)}
+
+  .card{background:var(--surface-1);border:1px solid var(--ring);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+  .card h2{font-size:13px;font-weight:600;color:var(--text-secondary);margin:0 0 10px;text-transform:uppercase;letter-spacing:.04em}
+
+  /* status chips: icon + label, never color alone */
+  .chip{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:13px;
+    padding:3px 10px;border-radius:999px;border:1px solid var(--ring);color:var(--text-primary);background:transparent}
+  .chip .ico{font-size:11px;line-height:1}
+  .chip.small{font-size:12px;padding:2px 8px}
+
+  /* hero */
+  .hero{display:flex;gap:26px;flex-wrap:wrap;align-items:stretch}
+  .hero-left{min-width:210px;display:flex;flex-direction:column;justify-content:center;gap:8px}
+  .hero-kicker{font-size:13px;color:var(--text-secondary)}
+  .hero-num{font-size:54px;font-weight:650;line-height:1;letter-spacing:-0.02em}
+  .hero-num small{font-size:16px;font-weight:500;color:var(--text-muted);letter-spacing:0}
+  .verdict{font-size:14px;color:var(--text-secondary);max-width:230px}
+  .hero-right{flex:1;min-width:300px;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px 18px;align-content:center}
+  .stat .lbl{font-size:12px;color:var(--text-muted)}
+  .stat .val{font-size:17px;font-weight:600}
+  .stat .sub{font-size:12px;color:var(--text-secondary)}
+
+  /* day strip */
+  .days{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px}
+  .day{border:1px solid var(--ring);border-radius:10px;padding:10px 10px 9px;background:transparent}
+  .day.today{background:var(--accent-wash)}
+  .day .d1{font-size:12px;color:var(--text-muted);margin-bottom:1px}
+  .day .d2{font-size:13px;font-weight:600;margin-bottom:6px}
+  .day .chip{margin-bottom:7px}
+  .day .kv{font-size:12px;color:var(--text-secondary);display:flex;justify-content:space-between;gap:8px;padding:1px 0}
+  .day .kv b{color:var(--text-primary);font-weight:600}
+
+  /* radar list */
+  .radar-row{display:flex;align-items:center;gap:12px;padding:9px 2px;border-top:1px solid var(--grid);flex-wrap:wrap}
+  .radar-row:first-of-type{border-top:none}
+  .radar-when{min-width:150px;font-weight:600}
+  .radar-when small{display:block;font-weight:400;color:var(--text-muted);font-size:12px}
+  .radar-desc{flex:1;color:var(--text-secondary);font-size:13px;min-width:220px}
+  .radar-score{font-weight:650;font-size:15px;min-width:34px;text-align:right}
+  .empty-note{color:var(--text-secondary);font-size:13px;padding:6px 2px}
+
+  /* filters */
+  .filters{display:flex;gap:8px;align-items:center;margin:2px 0 12px}
+  .filters .flabel{font-size:12px;color:var(--text-muted);margin-right:2px}
+  .fbtn{appearance:none;-webkit-appearance:none;background:transparent;border:1px solid var(--ring);
+    color:var(--text-secondary);border-radius:8px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}
+  .fbtn:hover{background:var(--accent-wash)}
+  .fbtn.sel{color:var(--text-primary);font-weight:600;border-color:var(--baseline);background:var(--accent-wash)}
+  .fbtn.sel::before{content:"✓ ";font-weight:700}
+
+  /* charts */
+  .chart-card{position:relative}
+  .legend{display:flex;gap:16px;align-items:center;margin:0 0 6px;flex-wrap:wrap}
+  .legend .lg{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-secondary)}
+  .legend .key{width:16px;height:0;border-top:3px solid;border-radius:2px;display:inline-block}
+  .legend .bandkey{width:16px;height:10px;border-radius:3px;display:inline-block}
+  .tooltip .tt-m{display:flex;align-items:center;gap:7px;padding:1px 0;color:var(--text-muted);font-size:11.5px}
+  .tooltip .tt-m b{color:var(--text-secondary);font-weight:600;margin-left:auto;padding-left:12px}
+  .tooltip .tt-sep{border-top:1px solid var(--grid);margin:4px 0 3px}
+  .chart-wrap{position:relative;width:100%}
+  .chart-wrap svg{display:block;width:100%;height:auto}
+  .tooltip{position:absolute;pointer-events:none;background:var(--surface-1);border:1px solid var(--ring);
+    border-radius:9px;padding:8px 11px;font-size:12.5px;box-shadow:0 4px 14px rgba(0,0,0,.10);
+    min-width:150px;display:none;z-index:5}
+  .tooltip .tt-h{font-weight:600;color:var(--text-primary);margin-bottom:5px}
+  .tooltip .tt-r{display:flex;align-items:center;gap:7px;padding:1.5px 0;color:var(--text-secondary)}
+  .tooltip .tt-r .key{width:13px;height:0;border-top:3px solid;border-radius:2px}
+  .tooltip .tt-r b{color:var(--text-primary);font-weight:650;margin-left:auto;padding-left:12px}
+
+  /* table view */
+  details.tbl{margin-top:4px}
+  details.tbl summary{cursor:pointer;color:var(--text-secondary);font-size:13px;padding:4px 0}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:8px}
+  th{color:var(--text-muted);font-weight:600;text-align:right;padding:4px 8px;border-bottom:1px solid var(--baseline)}
+  th:first-child,td:first-child{text-align:left}
+  td{padding:3px 8px;border-bottom:1px solid var(--grid);text-align:right;color:var(--text-secondary);
+    font-variant-numeric:tabular-nums}
+  td:first-child{color:var(--text-primary)}
+
+  .foot{color:var(--text-muted);font-size:12px;margin-top:18px;line-height:1.6}
+  .err{display:none;background:var(--surface-1);border:1px solid var(--st-critical);border-radius:12px;
+    padding:16px 18px;margin-bottom:14px}
+  .err b{color:var(--st-critical)}
+  .loading{color:var(--text-secondary);padding:30px 0;text-align:center}
+  .updated{font-size:12px;color:var(--text-muted)}
+</style>
+</head>
+<body>
+<div class="viz-root">
+<div class="wrap">
+
+  <header class="topbar">
+    <div class="title">
+      <h1>Bonanza Cancún</h1>
+      <p>Viento, mar y marea para SUP y nado en aguas abiertas · Zona Hotelera (21.14, −86.74) ·
+         contrasta con <a href="https://www.windguru.cz/197679" target="_blank" rel="noopener">Windguru Cancún</a></p>
+    </div>
+    <div class="topbtns">
+      <span class="updated" id="updated"></span>
+      <button class="ghost" id="btn-refresh" type="button">Actualizar</button>
+      <button class="ghost" id="btn-theme" type="button">Modo oscuro</button>
+    </div>
+  </header>
+
+  <div class="err" id="err">
+    <b>No pude cargar el pronóstico.</b>
+    <div style="color:var(--text-secondary);margin-top:4px">
+      Revisa tu conexión e intenta de nuevo. Mientras tanto puedes ver
+      <a href="https://www.windguru.cz/197679" target="_blank" rel="noopener">Windguru Cancún</a>.
+    </div>
+    <div style="margin-top:8px"><button class="ghost" id="btn-retry" type="button">Reintentar</button></div>
+  </div>
+
+  <div id="app"><div class="loading">Cargando pronóstico de viento, oleaje y marea…</div></div>
+
+  <div class="foot">
+    <b>Cómo se calcula:</b> cada hora recibe un score 0–100 combinando viento (nudos, 55%) y altura de ola (45%),
+    con ajustes por rachas, dirección terral, probabilidad de lluvia y un índice de claridad del agua
+    (horas de calma en las 36 h previas — mar quieto = agua cristalina y fondo visible).
+    Amanecer = salida del sol +3 h. Semáforo: ● Bonanza ≥75 · ◆ Aceptable 55–74 · ▲ Exigente 35–54 · ■ No apto &lt;35.<br>
+    <b>Fuentes (consenso ponderado):</b> viento = ECMWF IFS (38%), DWD ICON (27%), NOAA GFS (20%) vía Open-Meteo
+    + MET Norway (15%) vía api.met.no · oleaje = ECMWF WAM (40%), Météo-France MFWAM (35%), NOAA GFS-Wave (25%) ·
+    marea y temperatura del agua: Open-Meteo Marine. Son los mismos modelos que muestra
+    <a href="https://www.windguru.cz/197679" target="_blank" rel="noopener">Windguru (spot 197679)</a> en columnas separadas;
+    aquí se ponderan y la banda sombreada muestra el rango entre modelos (si difieren mucho, baja la confianza).
+    Todo se consulta en vivo al abrir la página; si una fuente falla, el consenso sigue con las demás.
+    La marea en Cancún es micromareal (rango &lt; 40 cm); pesan más el viento y el mar de fondo.<br>
+    <b>Seguridad:</b> esto es una estimación por modelos, no sustituye la observación en playa ni el sistema de banderas.
+    En aguas abiertas usa boya de visibilidad y avisa a alguien de tu ruta.
+  </div>
+
+</div>
+</div>
+
+<script>
+"use strict";
+/* ================= config ================= */
+const LAT = 21.135, LON = -86.74;
+const TH = {
+  windGood: 8, windOk: 11,        // kt
+  waveGood: 0.4, waveOk: 0.6,     // m
+};
+const DAYS_FWD = 8, DAYS_PAST = 2;
+const URL_WX = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}`
+  + `&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,precipitation_probability,temperature_2m`
+  + `&daily=sunrise,sunset&timezone=America%2FCancun&wind_speed_unit=kn`
+  + `&forecast_days=${DAYS_FWD}&past_days=${DAYS_PAST}`;
+const URL_SEA = `https://marine-api.open-meteo.com/v1/marine?latitude=${LAT}&longitude=${LON}`
+  + `&hourly=wave_height,wave_period,swell_wave_height,swell_wave_period,sea_level_height_msl,sea_surface_temperature`
+  + `&timezone=America%2FCancun&forecast_days=${DAYS_FWD}&past_days=${DAYS_PAST}`;
+/* multi-model ensemble (mismos modelos que muestra Windguru) */
+const MODELS_WX = [
+  {id:"ecmwf_ifs025", name:"ECMWF",  w:0.38},
+  {id:"icon_seamless", name:"ICON",  w:0.27},
+  {id:"gfs_seamless",  name:"GFS",   w:0.20},
+]; // + met.no (w 0.15) por su propia API
+const W_METNO = 0.15;
+const MODELS_SEA = [
+  {id:"ecmwf_wam025",    name:"ECMWF-WAM", w:0.40},
+  {id:"meteofrance_wave",name:"MFWAM",     w:0.35},
+  {id:"ncep_gfswave025", name:"GFS-Wave",  w:0.25},
+];
+const URL_WXM = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}`
+  + `&hourly=wind_speed_10m,wind_direction_10m&models=${MODELS_WX.map(m=>m.id).join(",")}`
+  + `&timezone=America%2FCancun&wind_speed_unit=kn&forecast_days=${DAYS_FWD}&past_days=${DAYS_PAST}`;
+const URL_SEAM = `https://marine-api.open-meteo.com/v1/marine?latitude=${LAT}&longitude=${LON}`
+  + `&hourly=wave_height,swell_wave_height&models=${MODELS_SEA.map(m=>m.id).join(",")}`
+  + `&timezone=America%2FCancun&forecast_days=${DAYS_FWD}&past_days=${DAYS_PAST}`;
+const URL_METNO = `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${LAT}&lon=${LON}`;
+const TZ_OFFSET_H = -5; // America/Cancun, sin DST
+
+const DOW = ["dom","lun","mar","mié","jue","vie","sáb"];
+const DOWL = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+const MON = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+
+let D = null;          // parsed data
+let rangeDays = 5;     // filter
+let themeDark = null;  // null = follow OS
+
+/* ================= helpers ================= */
+const $ = s => document.querySelector(s);
+function el(tag, cls, txt){ const e=document.createElement(tag); if(cls)e.className=cls; if(txt!=null)e.textContent=txt; return e; }
+function parseISO(s){ // "2026-07-25T06:00" (already local Cancún time)
+  return { y:+s.slice(0,4), mo:+s.slice(5,7), d:+s.slice(8,10), h:+s.slice(11,13), mi:+s.slice(14,16), key:s.slice(0,10) };
+}
+function fmtDay(t){ return `${DOW[dowOf(t)]} ${t.d} ${MON[t.mo-1]}`; }
+function dowOf(t){ // Zeller-free: use Date at noon UTC to get weekday of calendar date
+  return new Date(Date.UTC(t.y, t.mo-1, t.d, 12)).getUTCDay();
+}
+function fmtHM(t){ return `${String(t.h).padStart(2,"0")}:${String(t.mi).padStart(2,"0")}`; }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function lerp(x,x0,x1,y0,y1){ return y0+(y1-y0)*((x-x0)/(x1-x0)); }
+
+/* ================= scoring ================= */
+function windScore(w){
+  if(w==null) return null;
+  if(w<=5) return 100;
+  if(w<=8) return lerp(w,5,8,100,75);
+  if(w<=10) return lerp(w,8,10,75,55);
+  if(w<=12) return lerp(w,10,12,55,35);
+  if(w<=16) return lerp(w,12,16,35,5);
+  return 0;
+}
+function waveScore(h){
+  if(h==null) return null;
+  if(h<=0.2) return 100;
+  if(h<=0.4) return lerp(h,0.2,0.4,100,75);
+  if(h<=0.6) return lerp(h,0.4,0.6,75,50);
+  if(h<=0.9) return lerp(h,0.6,0.9,50,20);
+  if(h<=1.2) return lerp(h,0.9,1.2,20,0);
+  return 0;
+}
+function hourScore(i){
+  const w=D.wind[i], g=D.gust[i], dir=D.wdir[i], h=D.wave[i], pp=D.pprob[i];
+  const ws=windScore(w), vs=waveScore(h);
+  if(ws==null && vs==null) return null;
+  let s = (ws!=null && vs!=null) ? 0.55*ws+0.45*vs : (ws!=null?ws:vs);
+  if(w!=null && g!=null && g-w>7) s-=8;                       // rachas irregulares
+  if(pp!=null && pp>50) s-=10;                                // lluvia probable
+  if(dir!=null && w!=null && dir>=200 && dir<=340 && w<10) s+=4; // terral suave aplana el mar
+  return clamp(Math.round(s),0,100);
+}
+function statusOf(s){
+  if(s>=75) return {k:"good", ico:"●", lbl:"Bonanza", col:"var(--st-good)"};
+  if(s>=55) return {k:"warn", ico:"◆", lbl:"Aceptable", col:"var(--st-warn)"};
+  if(s>=35) return {k:"serious", ico:"▲", lbl:"Exigente", col:"var(--st-serious)"};
+  return {k:"critical", ico:"■", lbl:"No apto", col:"var(--st-critical)"};
+}
+function chipEl(st, small){
+  const c = el("span","chip"+(small?" small":""));
+  const i = el("span","ico",st.ico); i.style.color = st.col;
+  c.append(i, document.createTextNode(st.lbl));
+  return c;
+}
+
+/* clarity: fraction of previous 36h (before given index) that was calm */
+function clarityAt(idx){
+  let n=0, calm=0;
+  for(let i=Math.max(0,idx-36); i<idx; i++){
+    const w=D.wind[i], h=D.wave[i];
+    if(w==null && h==null) continue;
+    n++;
+    if((w==null||w<=10) && (h==null||h<=0.5)) calm++;
+  }
+  if(!n) return null;
+  return calm/n;
+}
+function clarityLabel(f){
+  if(f==null) return {lbl:"—", adj:0, desc:""};
+  if(f>=0.85) return {lbl:"Cristalina", adj:5, desc:"mar quieto 36 h: fondo visible"};
+  if(f>=0.55) return {lbl:"Aclarando", adj:0, desc:"el mar se va asentando"};
+  return {lbl:"Revuelta", adj:-8, desc:"mar movido reciente: agua turbia"};
+}
+
+/* ================= data ================= */
+async function fetchAll(){
+  const jget = u => fetch(u).then(r=> r.ok? r.json(): null).catch(()=>null);
+  const [wx, sea, wxm, seam, metno] = await Promise.all([
+    fetch(URL_WX).then(r=>{ if(!r.ok) throw new Error("weather http "+r.status); return r.json(); }),
+    jget(URL_SEA), jget(URL_WXM), jget(URL_SEAM), jget(URL_METNO)
+  ]);
+  return {wx, sea, wxm, seam, metno};
+}
+/* met.no: tiempos en UTC → clave horaria local de Cancún */
+function metnoToLocal(metno){
+  const out = {}; // key -> kt
+  try{
+    (metno.properties.timeseries||[]).forEach(ts=>{
+      const ms = Date.UTC(+ts.time.slice(0,4), +ts.time.slice(5,7)-1, +ts.time.slice(8,10), +ts.time.slice(11,13)) + TZ_OFFSET_H*3600000;
+      const d = new Date(ms);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}T${String(d.getUTCHours()).padStart(2,"0")}:00`;
+      const v = ts.data && ts.data.instant && ts.data.instant.details ? ts.data.instant.details.wind_speed : null;
+      if(v!=null) out[key] = +(v*1.9438).toFixed(1);
+    });
+  }catch(e){ /* fuente opcional */ }
+  return out;
+}
+/* consenso ponderado por hora; devuelve {mean,min,max,spread,n} o null */
+function consensus(sources, i){
+  let sw=0, sv=0, mn=null, mx=null, n=0;
+  sources.forEach(s=>{
+    const v = s.arr[i];
+    if(v==null) return;
+    n++; sw+=s.w; sv+=s.w*v;
+    if(mn==null||v<mn) mn=v;
+    if(mx==null||v>mx) mx=v;
+  });
+  if(!n) return null;
+  return {mean:sv/sw, min:mn, max:mx, spread:mx-mn, n};
+}
+function buildData(wx, sea, wxm, seam, metno){
+  const t = wx.hourly.time.map(parseISO);
+  const n = t.length;
+  const pick = (o,k)=> (o && o.hourly && o.hourly[k]) ? o.hourly[k] : new Array(n).fill(null);
+  const d = {
+    t, n,
+    wind: pick(wx,"wind_speed_10m"), gust: pick(wx,"wind_gusts_10m"), wdir: pick(wx,"wind_direction_10m"),
+    cloud: pick(wx,"cloud_cover"), pprob: pick(wx,"precipitation_probability"), temp: pick(wx,"temperature_2m"),
+    wave: pick(sea,"wave_height"), wvper: pick(sea,"wave_period"),
+    swell: pick(sea,"swell_wave_height"), swper: pick(sea,"swell_wave_period"),
+    tide: pick(sea,"sea_level_height_msl"), sst: pick(sea,"sea_surface_temperature"),
+    days: []
+  };
+  // align marine length safety
+  ["wave","wvper","swell","swper","tide","sst"].forEach(k=>{ if(d[k].length<n) d[k]=d[k].concat(new Array(n-d[k].length).fill(null)); });
+  D = d;
+
+  /* ---- consenso multi-modelo ---- */
+  d.windBM = d.wind.slice(); d.waveBM = d.wave.slice(); // best_match de respaldo
+  const mh = wxm && wxm.hourly ? wxm.hourly : null;
+  d.windSrc = [];
+  if(mh){
+    MODELS_WX.forEach(m=>{
+      const arr = mh["wind_speed_10m_"+m.id];
+      if(arr && arr.some(v=>v!=null)) d.windSrc.push({name:m.name, w:m.w, arr});
+    });
+  }
+  if(metno){
+    const byKey = metnoToLocal(metno);
+    const arr = t.map(tt=> byKey[`${tt.key}T${String(tt.h).padStart(2,"0")}:00`] ?? null);
+    if(arr.some(v=>v!=null)) d.windSrc.push({name:"met.no", w:W_METNO, arr});
+  }
+  const sh = seam && seam.hourly ? seam.hourly : null;
+  d.waveSrc = [];
+  if(sh){
+    MODELS_SEA.forEach(m=>{
+      const arr = sh["wave_height_"+m.id];
+      if(arr && arr.some(v=>v!=null)) d.waveSrc.push({name:m.name, w:m.w, arr});
+    });
+  }
+  d.windSpread = new Array(n).fill(null); d.windMin = new Array(n).fill(null); d.windMax = new Array(n).fill(null);
+  d.waveSpread = new Array(n).fill(null); d.waveMin = new Array(n).fill(null); d.waveMax = new Array(n).fill(null);
+  for(let i=0;i<n;i++){
+    const cw = d.windSrc.length>=2 ? consensus(d.windSrc, i) : null;
+    if(cw && cw.n>=2){
+      d.wind[i] = +cw.mean.toFixed(1);
+      d.windSpread[i]=+cw.spread.toFixed(1); d.windMin[i]=cw.min; d.windMax[i]=cw.max;
+    }
+    const cv = d.waveSrc.length>=2 ? consensus(d.waveSrc, i) : null;
+    if(cv && cv.n>=2){
+      d.wave[i] = +cv.mean.toFixed(2);
+      d.waveSpread[i]=+cv.spread.toFixed(2); d.waveMin[i]=cv.min; d.waveMax[i]=cv.max;
+    }
+  }
+  d.nWindSrc = d.windSrc.length || 1;
+  d.nWaveSrc = d.waveSrc.length || 1;
+
+  d.score = t.map((_,i)=>hourScore(i));
+  d.hasTide = d.tide.some(v=>v!=null);
+  d.hasWave = d.wave.some(v=>v!=null);
+
+  // daily
+  const sunrise = wx.daily.sunrise.map(parseISO), sunset = wx.daily.sunset.map(parseISO);
+  const byKey = {};
+  t.forEach((tt,i)=>{ (byKey[tt.key] = byKey[tt.key]||[]).push(i); });
+  wx.daily.time.forEach((dk,di)=>{
+    const idxs = byKey[dk]||[];
+    if(!idxs.length) return;
+    const sr = sunrise[di], ss = sunset[di];
+    const dawnIdx = idxs.filter(i=>t[i].h>=sr.h && t[i].h<=sr.h+3);
+    const dawnScores = dawnIdx.map(i=>d.score[i]).filter(v=>v!=null);
+    const cl = clarityAt(idxs.find(i=>t[i].h===sr.h) ?? idxs[0]);
+    const clL = clarityLabel(cl);
+    let dawn = dawnScores.length? Math.round(dawnScores.reduce((a,b)=>a+b,0)/dawnScores.length) : null;
+    if(dawn!=null) dawn = clamp(dawn + clL.adj, 0, 100);
+    // best 3h window of daytime
+    let best=null, bestAt=null;
+    const dayIdx = idxs.filter(i=>t[i].h>=6 && t[i].h<=19);
+    for(let k=0;k+2<dayIdx.length;k++){
+      const w3=[d.score[dayIdx[k]],d.score[dayIdx[k+1]],d.score[dayIdx[k+2]]].filter(v=>v!=null);
+      if(w3.length<3) continue;
+      const m=Math.round(w3.reduce((a,b)=>a+b,0)/3);
+      if(best==null||m>best){best=m;bestAt=t[dayIdx[k]].h;}
+    }
+    const avg = a => { const v=a.filter(x=>x!=null); return v.length? v.reduce((x,y)=>x+y,0)/v.length : null; };
+    // confianza: dispersión media entre modelos en la ventana del amanecer
+    const wSpr = avg(dawnIdx.map(i=>d.windSpread[i]));
+    const vSpr = avg(dawnIdx.map(i=>d.waveSpread[i]));
+    let conf = null;
+    if(wSpr!=null || vSpr!=null){
+      const wLvl = wSpr==null?0 : (wSpr<=2?0 : wSpr<=4?1 : 2);
+      const vLvl = vSpr==null?0 : (vSpr<=0.15?0 : vSpr<=0.35?1 : 2);
+      const lvl = Math.max(wLvl,vLvl);
+      conf = [
+        {lbl:"Alta",  desc:"modelos de acuerdo", lvl:0},
+        {lbl:"Media", desc:"difieren un poco",   lvl:1},
+        {lbl:"Baja",  desc:"modelos divididos — confirma la víspera", lvl:2}
+      ][lvl];
+      conf.wSpr = wSpr; conf.vSpr = vSpr;
+    }
+    d.days.push({
+      conf,
+      key:dk, di, t:parseISO(dk+"T12:00"), sunrise:sr, sunset:ss,
+      dawn, dawnIdx, clarity:cl, clarityL:clL,
+      best, bestAt,
+      dawnWind: avg(dawnIdx.map(i=>d.wind[i])), dawnGust: avg(dawnIdx.map(i=>d.gust[i])),
+      dawnWave: avg(dawnIdx.map(i=>d.wave[i])), dawnSwell: avg(dawnIdx.map(i=>d.swell[i])),
+      dawnCloud: avg(dawnIdx.map(i=>d.cloud[i])), dawnPP: avg(dawnIdx.map(i=>d.pprob[i]))
+    });
+  });
+  // index of "now" (first hour of today) — past_days offset
+  d.todayKey = wx.daily.time[DAYS_PAST];
+  d.futureDays = d.days.slice(DAYS_PAST);
+  // tide extremes (local min/max)
+  d.tideExt = [];
+  if(d.hasTide){
+    for(let i=1;i<n-1;i++){
+      const a=d.tide[i-1],b=d.tide[i],c=d.tide[i+1];
+      if(a==null||b==null||c==null) continue;
+      if(b>=a&&b>c) d.tideExt.push({i,kind:"plea"});
+      else if(b<=a&&b<c) d.tideExt.push({i,kind:"baja"});
+    }
+  }
+}
+
+/* tide state at a given index */
+function tideState(i){
+  if(!D.hasTide) return null;
+  const a=D.tide[Math.max(0,i-1)], b=D.tide[Math.min(D.n-1,i+1)];
+  if(a==null||b==null) return null;
+  return (b-a) > 0.005 ? "subiendo" : (b-a) < -0.005 ? "bajando" : "estable";
+}
+
+/* ================= render ================= */
+function render(){
+  const app = $("#app");
+  app.textContent = "";
+  const now = new Date();
+  $("#updated").textContent = "Actualizado " +
+    now.toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"});
+
+  app.append(renderHero(), renderDays(), renderRadar());
+  app.append(renderFilters());
+  const chartsBox = el("div"); chartsBox.id="charts";
+  app.append(chartsBox);
+  renderCharts();
+  app.append(renderTable());
+}
+
+function nextDawnDay(){
+  const now = new Date();
+  const hh = now.getHours() + now.getMinutes()/60;
+  const days = D.futureDays;
+  if(days.length && hh < days[0].sunrise.h + days[0].sunrise.mi/60 + 3) return days[0];
+  return days[1] || days[0];
+}
+
+function renderHero(){
+  const card = el("section","card");
+  const dEntry = nextDawnDay();
+  card.append(el("h2",null,"Próximo amanecer"));
+  const box = el("div","hero");
+  const left = el("div","hero-left");
+  const st = statusOf(dEntry.dawn ?? 0);
+  const kick = el("div","hero-kicker",
+    `${DOWL[dowOf(dEntry.t)]} ${dEntry.t.d} ${MON[dEntry.t.mo-1]} · sol ${fmtHM(dEntry.sunrise)}`);
+  left.append(kick);
+  if(D.windSrc.length>=2){
+    const srcLine = el("div","hero-kicker");
+    srcLine.style.fontSize="12px"; srcLine.style.color="var(--text-muted)";
+    srcLine.textContent = "Consenso: "+D.windSrc.map(s=>s.name).join(" · ")
+      + (D.waveSrc.length? " | olas: "+D.waveSrc.map(s=>s.name).join(" · ") : "");
+    left.append(srcLine);
+  }
+  const num = el("div","hero-num", dEntry.dawn!=null? String(dEntry.dawn) : "—");
+  const sm = el("small"," / 100"); num.append(sm);
+  left.append(num, chipEl(st), el("div","verdict",verdict(dEntry)));
+  const right = el("div","hero-right");
+  const stat=(lbl,val,sub)=>{const s=el("div","stat");s.append(el("div","lbl",lbl),el("div","val",val),el("div","sub",sub||""));return s;};
+  const f1=(v,d=1)=> v==null?"—":(Math.round(v*10**d)/10**d).toLocaleString("es-MX");
+  right.append(
+    stat("Viento", f1(dEntry.dawnWind,0)+" kt", "rachas "+f1(dEntry.dawnGust,0)+" kt"),
+    stat("Olas", f1(dEntry.dawnWave)+" m", "fondo "+f1(dEntry.dawnSwell)+" m"),
+  );
+  if(D.hasTide){
+    const srIdx = D.t.findIndex(tt=>tt.key===dEntry.key && tt.h===dEntry.sunrise.h);
+    const tstate = srIdx>=0? tideState(srIdx):null;
+    const next = D.tideExt.find(e=>e.i>srIdx);
+    right.append(stat("Marea", tstate? tstate[0].toUpperCase()+tstate.slice(1) : "—",
+      next? (next.kind==="plea"?"pleamar ":"bajamar ")+fmtHM(D.t[next.i]) : ""));
+  }
+  if(dEntry.conf){
+    const f2=(v,dd)=>v==null?"":(Math.round(v*10**dd)/10**dd).toLocaleString("es-MX");
+    right.append(stat("Confianza", dEntry.conf.lbl,
+      (dEntry.conf.wSpr!=null?("±"+f2(dEntry.conf.wSpr,0)+" kt"):"")
+      +(dEntry.conf.vSpr!=null?(" ±"+f2(dEntry.conf.vSpr,1)+" m"):"")+" entre modelos"));
+  }
+  right.append(
+    stat("Claridad", dEntry.clarityL.lbl, dEntry.clarityL.desc),
+    stat("Nubes", f1(dEntry.dawnCloud,0)+" %", "lluvia "+f1(dEntry.dawnPP,0)+" %"),
+    stat("Agua", (()=>{ const v=D.sst[D.t.findIndex(t=>t.key===dEntry.key)] ?? D.sst.find(x=>x!=null); return v!=null? f1(v,0)+" °C":"—"; })(),"temp. superficial")
+  );
+  box.append(left,right); card.append(box);
+  return card;
+}
+function verdict(d){
+  if(d.dawn==null) return "Sin datos suficientes para esta ventana.";
+  if(d.dawn>=75) return d.clarityL.lbl==="Cristalina"
+    ? "Mar planchado y agua clara — día para madrugar."
+    : "Condición de bonanza: viento y mar en calma.";
+  if(d.dawn>=55) return "Remable con algo de textura; pegado a la costa mejora.";
+  if(d.dawn>=35) return "Mar trabajado: solo con experiencia y cerca de la orilla.";
+  return "Viento y mar arriba de umbral — mejor descansar o laguna.";
+}
+
+function renderDays(){
+  const card = el("section","card");
+  card.append(el("h2",null,"Semáforo · próximos "+D.futureDays.length+" días (amanecer)"));
+  const grid = el("div","days");
+  D.futureDays.forEach((d,ix)=>{
+    const box = el("div","day"+(ix===0?" today":""));
+    box.append(el("div","d1",ix===0?"Hoy":DOW[dowOf(d.t)]));
+    box.append(el("div","d2",`${d.t.d} ${MON[d.t.mo-1]}`));
+    box.append(chipEl(statusOf(d.dawn ?? 0),true));
+    const kv=(k,v)=>{const r=el("div","kv");r.append(el("span",null,k));const b=el("b",null,v);r.append(b);return r;};
+    const f=(v,dd=1)=>v==null?"—":(Math.round(v*10**dd)/10**dd).toString();
+    box.append(
+      kv("score", d.dawn==null?"—":String(d.dawn)),
+      kv("viento", f(d.dawnWind,0)+" kt"),
+      kv("olas", f(d.dawnWave)+" m"),
+      kv("agua", ({"Cristalina":"clara","Aclarando":"media","Revuelta":"turbia"})[d.clarityL.lbl] || "—")
+    );
+    if(d.conf) box.append(kv("conf.", d.conf.lbl.toLowerCase()));
+    grid.append(box);
+  });
+  card.append(grid);
+  return card;
+}
+
+function renderRadar(){
+  const card = el("section","card");
+  card.append(el("h2",null,"Radar de bonanza — ventanas detectadas"));
+  const hits = D.futureDays.filter(d=>d.dawn!=null && d.dawn>=65);
+  if(!hits.length){
+    card.append(el("div","empty-note",
+      "Sin bonanza clara en el horizonte de "+D.futureDays.length+" días. "+
+      "El terral de madrugada puede abrir ventanas cortas justo al amanecer — la alerta diaria te avisará si algo cambia."));
+  } else {
+    hits.forEach(d=>{
+      const row = el("div","radar-row");
+      const when = el("div","radar-when", `${DOWL[dowOf(d.t)]} ${d.t.d} ${MON[d.t.mo-1]}`);
+      when.append(el("small",null,"sol "+fmtHM(d.sunrise)+" · ventana hasta "+String(d.sunrise.h+3).padStart(2,"0")+":00"));
+      const f=(v,dd=1)=>v==null?"—":(Math.round(v*10**dd)/10**dd).toString();
+      const desc = el("div","radar-desc",
+        `Viento ${f(d.dawnWind,0)} kt · olas ${f(d.dawnWave)} m · agua ${d.clarityL.lbl.toLowerCase()}`+
+        (d.best!=null && d.best>=65 && d.bestAt!=null ? ` · aguanta hasta ~${String(d.bestAt+3).padStart(2,"0")}:00` : "")+
+        (d.conf? ` · confianza ${d.conf.lbl.toLowerCase()}` : ""));
+      row.append(when, chipEl(statusOf(d.dawn),true), desc, el("div","radar-score",String(d.dawn)));
+      card.append(row);
+    });
+  }
+  return card;
+}
+
+function renderFilters(){
+  const bar = el("div","filters");
+  bar.append(el("span","flabel","Rango:"));
+  [3,5,8].forEach(nd=>{
+    const b = el("button","fbtn"+(nd===rangeDays?" sel":""), nd+" días");
+    b.type="button";
+    b.addEventListener("click",()=>{ rangeDays=nd; render(); });
+    bar.append(b);
+  });
+  return bar;
+}
+
+/* ---------- charts ---------- */
+function visibleIdx(){
+  const startKey = D.todayKey;
+  const s = D.t.findIndex(t=>t.key===startKey);
+  const lastDay = D.futureDays[Math.min(rangeDays,D.futureDays.length)-1];
+  let e = D.n-1;
+  if(lastDay){ for(let i=D.n-1;i>=0;i--){ if(D.t[i].key===lastDay.key){ e=i; break; } } }
+  return [Math.max(0,s), e];
+}
+
+function renderCharts(){
+  const box = $("#charts");
+  box.textContent="";
+  const [s,e] = visibleIdx();
+  const multiW = D.windSrc.length>=2, multiV = D.waveSrc.length>=2;
+  box.append(chartCard("Viento (nudos)"+(multiW?` — consenso de ${D.windSrc.length} modelos`:""), [
+      {name: multiW?"Consenso":"Viento", col:"var(--s-wind)", data:D.wind},
+      {name:"Rachas", col:"var(--s-gust)", data:D.gust}
+    ], {s,e,unit:" kt", threshold:TH.windGood, thLabel:"≤8 kt bonanza", ymin:0, dec:0,
+        band: multiW? {min:D.windMin,max:D.windMax,col:"var(--s-wind)",name:"Rango entre modelos"} : null,
+        models: multiW? D.windSrc : null}));
+  if(D.hasWave){
+    box.append(chartCard("Oleaje (metros)"+(multiV?` — consenso de ${D.waveSrc.length} modelos`:""), [
+        {name: multiV?"Ola total (consenso)":"Ola total", col:"var(--s-wave)", data:D.wave},
+        {name:"Mar de fondo", col:"var(--s-swell)", data:D.swell}
+      ], {s,e,unit:" m", threshold:TH.waveGood, thLabel:"≤0.4 m bonanza", ymin:0, dec:1,
+          band: multiV? {min:D.waveMin,max:D.waveMax,col:"var(--s-wave)",name:"Rango entre modelos"} : null,
+          models: multiV? D.waveSrc : null}));
+  }
+  if(D.hasTide){
+    box.append(chartCard("Marea — nivel del mar (cm sobre media)", [
+        {name:"Nivel del mar", col:"var(--s-tide)", data:D.tide.map(v=>v==null?null:v*100)}
+      ], {s,e,unit:" cm", area:true, dec:0, tideMarks:true}));
+  }
+}
+
+function chartCard(title, series, opt){
+  const card = el("section","card chart-card");
+  card.append(el("h2",null,title));
+  if(series.length>1 || (opt && opt.band)){
+    const lg = el("div","legend");
+    series.forEach(sr=>{
+      const item = el("span","lg");
+      const k = el("span","key"); k.style.borderTopColor = sr.col;
+      item.append(k, document.createTextNode(sr.name));
+      lg.append(item);
+    });
+    if(opt && opt.band){
+      const item = el("span","lg");
+      const k = el("span","bandkey");
+      k.style.background = `color-mix(in srgb, ${opt.band.col} 14%, transparent)`;
+      k.style.border = "1px solid var(--ring)";
+      item.append(k, document.createTextNode(opt.band.name));
+      lg.append(item);
+    }
+    card.append(lg);
+  }
+  const wrap = el("div","chart-wrap");
+  card.append(wrap);
+  const tt = el("div","tooltip"); card.append(tt);
+  drawChart(wrap, tt, series, opt);
+  return card;
+}
+
+function niceTicks(max,min){
+  const span = max-min;
+  const steps=[0.1,0.2,0.25,0.5,1,2,5,10,20,50,100];
+  let st=steps.find(s=>span/s<=6)||100;
+  const t=[]; const start=Math.ceil(min/st)*st;
+  for(let v=start;v<=max+1e-9;v+=st) t.push(+v.toFixed(2));
+  return t;
+}
+
+function drawChart(wrap, tt, series, opt){
+  const W = Math.max(560, Math.min(1030, wrap.clientWidth || 1000));
+  const H = opt.area? 190 : 230;
+  const M = {l:46,r:14,t:10,b:26};
+  const [s,e] = [opt.s,opt.e];
+  const N = e-s+1;
+  // y domain
+  let vals=[]; series.forEach(sr=>{ for(let i=s;i<=e;i++){ const v=sr.data[i]; if(v!=null) vals.push(v);} });
+  if(!vals.length){ wrap.append(el("div","empty-note","Sin datos para este rango.")); return; }
+  let ymax=Math.max(...vals), ymin=opt.ymin!=null? opt.ymin : Math.min(...vals);
+  if(opt.threshold!=null) ymax=Math.max(ymax,opt.threshold*1.4);
+  const pad=(ymax-ymin)*0.12||1; ymax+=pad; if(opt.ymin==null) ymin-=pad;
+  const X=i=> M.l + ( (i-s)/(N-1) )*(W-M.l-M.r);
+  const Y=v=> M.t + (1-(v-ymin)/(ymax-ymin))*(H-M.t-M.b);
+
+  const svgNS="http://www.w3.org/2000/svg";
+  const svg=document.createElementNS(svgNS,"svg");
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  const add=(p,tag,attrs)=>{const n=document.createElementNS(svgNS,tag);for(const k in attrs)n.setAttribute(k,attrs[k]);p.append(n);return n;};
+
+  // night shading + dawn windows
+  D.days.forEach(day=>{
+    const idxs=[]; for(let i=s;i<=e;i++){ if(D.t[i].key===day.key) idxs.push(i); }
+    if(!idxs.length) return;
+    const sr=day.sunrise, ss=day.sunset;
+    idxs.forEach(i=>{
+      const h=D.t[i].h;
+      if(h<sr.h || h>=ss.h){
+        add(svg,"rect",{x:X(i)-((W-M.l-M.r)/(N-1))/2, y:M.t, width:(W-M.l-M.r)/(N-1)+0.5, height:H-M.t-M.b, fill:"var(--night-wash)"});
+      } else if(h>=sr.h && h<sr.h+3){
+        add(svg,"rect",{x:X(i)-((W-M.l-M.r)/(N-1))/2, y:M.t, width:(W-M.l-M.r)/(N-1)+0.5, height:H-M.t-M.b, fill:"var(--accent-wash)"});
+      }
+    });
+  });
+
+  // gridlines + y ticks
+  niceTicks(ymax,ymin).forEach(v=>{
+    add(svg,"line",{x1:M.l,x2:W-M.r,y1:Y(v),y2:Y(v),stroke:"var(--grid)","stroke-width":1});
+    const txt=add(svg,"text",{x:M.l-7,y:Y(v)+3.5,"text-anchor":"end","font-size":11,fill:"var(--text-muted)"});
+    txt.textContent = (opt.dec===0? Math.round(v): v).toLocaleString("es-MX");
+    txt.style.fontVariantNumeric="tabular-nums";
+  });
+  // x: day boundaries
+  for(let i=s;i<=e;i++){
+    if(D.t[i].h===0){
+      add(svg,"line",{x1:X(i),x2:X(i),y1:M.t,y2:H-M.b,stroke:"var(--grid)","stroke-width":1});
+    }
+    if(D.t[i].h===12){
+      const txt=add(svg,"text",{x:X(i),y:H-8,"text-anchor":"middle","font-size":11,fill:"var(--text-muted)"});
+      txt.textContent=fmtDay(D.t[i]);
+    }
+  }
+  // baseline
+  add(svg,"line",{x1:M.l,x2:W-M.r,y1:H-M.b,y2:H-M.b,stroke:"var(--baseline)","stroke-width":1});
+
+  // banda de incertidumbre (rango min–max entre modelos)
+  if(opt.band){
+    let seg=[], segs=[];
+    for(let i=s;i<=e;i++){
+      const lo=opt.band.min[i], hi=opt.band.max[i];
+      if(lo==null||hi==null){ if(seg.length>1) segs.push(seg); seg=[]; continue; }
+      seg.push([X(i), Y(clamp(hi,ymin,ymax)), Y(clamp(lo,ymin,ymax))]);
+    }
+    if(seg.length>1) segs.push(seg);
+    segs.forEach(sg=>{
+      let p="";
+      sg.forEach(([x,yh],k)=>{ p += (k?"L":"M")+x.toFixed(1)+" "+yh.toFixed(1)+" "; });
+      for(let k=sg.length-1;k>=0;k--){ p += "L"+sg[k][0].toFixed(1)+" "+sg[k][2].toFixed(1)+" "; }
+      add(svg,"path",{d:p+"Z", fill:opt.band.col, "fill-opacity":0.12, stroke:"none"});
+    });
+  }
+
+  // threshold hairline
+  if(opt.threshold!=null){
+    add(svg,"line",{x1:M.l,x2:W-M.r,y1:Y(opt.threshold),y2:Y(opt.threshold),stroke:"var(--st-good)","stroke-width":1,"stroke-opacity":0.55});
+    const txt=add(svg,"text",{x:W-M.r-3,y:Y(opt.threshold)-4,"text-anchor":"end","font-size":10.5,fill:"var(--text-secondary)"});
+    txt.textContent=opt.thLabel;
+  }
+
+  // series paths (2px, round)
+  series.forEach(sr=>{
+    let dPath="", open=false;
+    for(let i=s;i<=e;i++){
+      const v=sr.data[i];
+      if(v==null){ open=false; continue; }
+      dPath += (open?"L":"M")+X(i).toFixed(1)+" "+Y(v).toFixed(1)+" ";
+      open=true;
+    }
+    if(opt.area){
+      let aPath="", started=false, lastX=null;
+      for(let i=s;i<=e;i++){ const v=sr.data[i]; if(v==null) continue;
+        aPath += (started?"L":"M")+X(i).toFixed(1)+" "+Y(v).toFixed(1)+" "; started=true; lastX=X(i);
+        if(!started) continue; }
+      if(started){
+        aPath += `L${lastX.toFixed(1)} ${H-M.b} L${M.l} ${H-M.b} Z`;
+        add(svg,"path",{d:aPath,fill:sr.col,"fill-opacity":0.1,stroke:"none"});
+      }
+    }
+    add(svg,"path",{d:dPath,fill:"none",stroke:sr.col,"stroke-width":2,"stroke-linejoin":"round","stroke-linecap":"round"});
+  });
+
+  // tide extreme markers: dots + selective labels
+  if(opt.tideMarks){
+    D.tideExt.forEach(ext=>{
+      if(ext.i<s||ext.i>e) return;
+      const v=D.tide[ext.i]*100;
+      add(svg,"circle",{cx:X(ext.i),cy:Y(v),r:4.5,fill:"var(--s-tide)",stroke:"var(--surface-1)","stroke-width":2});
+      if(D.t[ext.i].h>=5 && D.t[ext.i].h<=20){
+        const txt=add(svg,"text",{x:X(ext.i),y:Y(v)+(ext.kind==="plea"?-9:16),"text-anchor":"middle","font-size":10.5,fill:"var(--text-secondary)"});
+        txt.textContent=(ext.kind==="plea"?"plea ":"baja ")+fmtHM(D.t[ext.i]);
+      }
+    });
+  }
+
+  // crosshair
+  const cross=add(svg,"line",{x1:0,x2:0,y1:M.t,y2:H-M.b,stroke:"var(--baseline)","stroke-width":1,visibility:"hidden"});
+  const dots=series.map(sr=>add(svg,"circle",{r:4.5,fill:sr.col.replace("var(",'').replace(")",'')? "": "", visibility:"hidden"}));
+  series.forEach((sr,k)=>{ dots[k].setAttribute("fill",sr.col); dots[k].setAttribute("stroke","var(--surface-1)"); dots[k].setAttribute("stroke-width","2"); });
+
+  wrap.append(svg);
+
+  // hover layer
+  function showAt(clientX, clientY){
+    const r=svg.getBoundingClientRect();
+    const px=(clientX-r.left)*(W/r.width);
+    let i=Math.round(s + (px-M.l)/(W-M.l-M.r)*(N-1));
+    i=clamp(i,s,e);
+    cross.setAttribute("x1",X(i)); cross.setAttribute("x2",X(i));
+    cross.setAttribute("visibility","visible");
+    tt.textContent="";
+    const h=el("div","tt-h", fmtDay(D.t[i])+" · "+String(D.t[i].h).padStart(2,"0")+":00");
+    tt.append(h);
+    series.forEach((sr,k)=>{
+      const v=sr.data[i];
+      if(v==null){ dots[k].setAttribute("visibility","hidden"); return; }
+      dots[k].setAttribute("cx",X(i)); dots[k].setAttribute("cy",Y(v));
+      dots[k].setAttribute("visibility","visible");
+      const row=el("div","tt-r");
+      const key=el("span","key"); key.style.borderTopColor=sr.col;
+      row.append(key, document.createTextNode(sr.name));
+      const dec = opt.dec!=null? opt.dec : 1;
+      row.append(el("b",null,(Math.round(v*10**dec)/10**dec).toLocaleString("es-MX")+(opt.unit||"")));
+      tt.append(row);
+    });
+    if(opt.models){
+      let any=false;
+      const frag=document.createDocumentFragment();
+      opt.models.forEach(m=>{
+        const v=m.arr[i];
+        if(v==null) return;
+        any=true;
+        const row=el("div","tt-m");
+        row.append(document.createTextNode(m.name));
+        const dec = opt.dec!=null? opt.dec : 1;
+        row.append(el("b",null,(Math.round(v*10**dec)/10**dec).toLocaleString("es-MX")+(opt.unit||"")));
+        frag.append(row);
+      });
+      if(any){ tt.append(el("div","tt-sep")); tt.append(frag); }
+    }
+    tt.style.display="block";
+    const cardR=tt.parentElement.getBoundingClientRect();
+    let lx=clientX-cardR.left+14, ly=clientY-cardR.top-10;
+    if(lx+170>cardR.width) lx-=190;
+    tt.style.left=lx+"px"; tt.style.top=ly+"px";
+  }
+  svg.addEventListener("pointermove",ev=>showAt(ev.clientX,ev.clientY));
+  svg.addEventListener("pointerleave",()=>{ tt.style.display="none"; cross.setAttribute("visibility","hidden"); dots.forEach(d=>d.setAttribute("visibility","hidden")); });
+}
+
+/* ---------- table view ---------- */
+function renderTable(){
+  const [s,e]=visibleIdx();
+  const det = el("details","tbl");
+  det.append(el("summary",null,"Ver tabla de datos horarios (accesible sin hover)"));
+  const tb = el("table");
+  const tr = el("tr");
+  ["Hora","Viento kt","Modelos kt","Rachas kt","Dir °","Ola m","Fondo m","Marea cm","Nubes %","Lluvia %","Score"].forEach(hh=>tr.append(el("th",null,hh)));
+  tb.append(tr);
+  const f=(v,dd=1)=>v==null?"—":(Math.round(v*10**dd)/10**dd).toLocaleString("es-MX");
+  for(let i=s;i<=e;i++){
+    if(D.t[i].h%2) continue; // every 2h keeps it readable
+    const r=el("tr");
+    r.append(el("td",null,fmtDay(D.t[i])+" "+String(D.t[i].h).padStart(2,"0")+":00"));
+    [f(D.wind[i],0),
+     (D.windMin[i]!=null? f(D.windMin[i],0)+"–"+f(D.windMax[i],0) : "—"),
+     f(D.gust[i],0),f(D.wdir[i],0),f(D.wave[i]),f(D.swell[i]),
+     f(D.tide[i]==null?null:D.tide[i]*100,0),f(D.cloud[i],0),f(D.pprob[i],0),
+     D.score[i]==null?"—":String(D.score[i])].forEach(v=>r.append(el("td",null,v)));
+    tb.append(r);
+  }
+  det.append(tb);
+  return det;
+}
+
+/* ================= boot ================= */
+async function boot(){
+  $("#err").style.display="none";
+  $("#app").textContent=""; $("#app").append(el("div","loading","Cargando pronóstico de viento, oleaje y marea…"));
+  try{
+    const {wx, sea, wxm, seam, metno} = await fetchAll();
+    buildData(wx, sea, wxm, seam, metno);
+    render();
+  }catch(err){
+    $("#app").textContent="";
+    $("#err").style.display="block";
+  }
+}
+$("#btn-refresh").addEventListener("click",boot);
+$("#btn-retry").addEventListener("click",boot);
+$("#btn-theme").addEventListener("click",()=>{
+  const root=document.documentElement;
+  const dark = root.getAttribute("data-theme")==="dark";
+  root.setAttribute("data-theme", dark? "light":"dark");
+  $("#btn-theme").textContent = dark? "Modo oscuro":"Modo claro";
+});
+let rsz=null;
+window.addEventListener("resize",()=>{ if(D){ clearTimeout(rsz); rsz=setTimeout(renderCharts,150); } });
+boot();
+</script>
+</body>
+</html>
