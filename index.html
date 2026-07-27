@@ -82,6 +82,34 @@
   .day .kv{font-size:12px;color:var(--text-secondary);display:flex;justify-content:space-between;gap:8px;padding:1px 0}
   .day .kv b{color:var(--text-primary);font-weight:600}
 
+  /* day cards clickable + pin */
+  .day{cursor:pointer;transition:border-color .12s}
+  .day:hover{border-color:var(--baseline)}
+  .day .pin{position:absolute;top:7px;right:9px;font-size:13px;line-height:1;color:var(--text-muted);opacity:.45;cursor:pointer}
+  .day .pin.on{color:var(--st-warn);opacity:1}
+  .day{position:relative}
+
+  /* modal / hoja de día */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;
+    padding:26px 14px;z-index:50;overflow:auto}
+  .sheet{background:var(--surface-1);border:1px solid var(--ring);border-radius:14px;max-width:680px;width:100%;
+    padding:18px 20px 20px;position:relative;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+  .sheet h3{margin:0;font-size:17px;font-weight:650}
+  .sheet .sub{color:var(--text-secondary);font-size:13px;margin:2px 0 10px}
+  .sheet .xclose{position:absolute;top:10px;right:10px}
+  .sheet .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px 16px;margin:12px 0 4px}
+  .prevbox{background:var(--accent-wash);border-radius:9px;padding:9px 12px;font-size:12.5px;color:var(--text-secondary);margin:10px 0 2px}
+  .prevbox b{color:var(--text-primary)}
+  .btnrow{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center}
+  button.primary{background:var(--s-wind);border:1px solid transparent;color:#fff;border-radius:8px;
+    padding:7px 14px;font:inherit;font-size:13px;cursor:pointer;font-weight:600}
+  .moon-ico{vertical-align:-3px;margin-right:5px}
+
+  /* destacados + registro */
+  .pin-note{font-size:12px;color:var(--text-muted);margin-top:6px}
+  .reg-note{color:var(--text-secondary);font-size:12.5px;margin:-4px 0 8px}
+  .reg-prev{font-size:12px;color:var(--text-muted);margin-top:2px}
+
   /* radar list */
   .radar-row{display:flex;align-items:center;gap:12px;padding:9px 2px;border-top:1px solid var(--grid);flex-wrap:wrap}
   .radar-row:first-of-type{border-top:none}
@@ -169,7 +197,10 @@
     <b>Cómo se calcula:</b> cada hora recibe un score 0–100 combinando viento (nudos, 55%) y altura de ola (45%),
     con ajustes por rachas, dirección terral, probabilidad de lluvia y un índice de claridad del agua
     (horas de calma en las 36 h previas — mar quieto = agua cristalina y fondo visible).
-    Amanecer = salida del sol +3 h. Semáforo: ● Bonanza ≥75 · ◆ Aceptable 55–74 · ▲ Exigente 35–54 · ■ No apto &lt;35.<br>
+    Amanecer = salida del sol +3 h. Semáforo: ● Bonanza ≥75 · ◆ Aceptable 55–74 · ▲ Exigente 35–54 · ■ No apto &lt;35.
+    La <b>bitácora</b> guarda automáticamente los amaneceres pasados con score 90+ junto con sus días previos y la fase lunar
+    (calculada astronómicamente; luna nueva/llena ≈ mareas vivas, cuartos ≈ mareas muertas). Toca cualquier día del semáforo
+    para ver su hoja de detalle y destacarlo. Registro y destacados se guardan en este navegador.<br>
     <b>Fuentes (consenso ponderado):</b> viento = ECMWF IFS (38%), DWD ICON (27%), NOAA GFS (20%) vía Open-Meteo
     + MET Norway (15%) vía api.met.no · oleaje = ECMWF WAM (40%), Météo-France MFWAM (35%), NOAA GFS-Wave (25%) ·
     marea y temperatura del agua: Open-Meteo Marine. Son los mismos modelos que muestra
@@ -192,7 +223,10 @@ const TH = {
   windGood: 8, windOk: 11,        // kt
   waveGood: 0.4, waveOk: 0.6,     // m
 };
-const DAYS_FWD = 8, DAYS_PAST = 2;
+const DAYS_FWD = 8, DAYS_PAST = 31;   // 31 días de hindcast para la bitácora
+const DAYS_PAST_MODELS = 2;           // multi-modelo solo necesita contexto corto
+const REG_MIN = 90;                   // umbral de la bitácora
+const STORE_KEY = "bonanzaCancunV1";
 const URL_WX = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}`
   + `&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,precipitation_probability,temperature_2m`
   + `&daily=sunrise,sunset&timezone=America%2FCancun&wind_speed_unit=kn`
@@ -214,10 +248,10 @@ const MODELS_SEA = [
 ];
 const URL_WXM = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}`
   + `&hourly=wind_speed_10m,wind_direction_10m&models=${MODELS_WX.map(m=>m.id).join(",")}`
-  + `&timezone=America%2FCancun&wind_speed_unit=kn&forecast_days=${DAYS_FWD}&past_days=${DAYS_PAST}`;
+  + `&timezone=America%2FCancun&wind_speed_unit=kn&forecast_days=${DAYS_FWD}&past_days=${DAYS_PAST_MODELS}`;
 const URL_SEAM = `https://marine-api.open-meteo.com/v1/marine?latitude=${LAT}&longitude=${LON}`
   + `&hourly=wave_height,swell_wave_height&models=${MODELS_SEA.map(m=>m.id).join(",")}`
-  + `&timezone=America%2FCancun&forecast_days=${DAYS_FWD}&past_days=${DAYS_PAST}`;
+  + `&timezone=America%2FCancun&forecast_days=${DAYS_FWD}&past_days=${DAYS_PAST_MODELS}`;
 const URL_METNO = `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${LAT}&lon=${LON}`;
 const TZ_OFFSET_H = -5; // America/Cancun, sin DST
 
@@ -228,6 +262,65 @@ const MON = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","
 let D = null;          // parsed data
 let rangeDays = 5;     // filter
 let themeDark = null;  // null = follow OS
+
+/* almacenamiento seguro: localStorage si está disponible (web), memoria si no (artefacto) */
+const store = (()=>{
+  let mem = {};
+  let ok = false;
+  try{ localStorage.setItem("__t","1"); localStorage.removeItem("__t"); ok = true; }catch(e){ ok = false; }
+  return {
+    persistent: ok,
+    load(){ try{ if(ok){ const s = localStorage.getItem(STORE_KEY); return s? JSON.parse(s) : null; } }catch(e){} return mem[STORE_KEY]||null; },
+    save(obj){ try{ if(ok){ localStorage.setItem(STORE_KEY, JSON.stringify(obj)); return; } }catch(e){} mem[STORE_KEY]=obj; }
+  };
+})();
+function loadState(){ const s = store.load(); return { entries:(s&&s.entries)||{}, pinned:(s&&s.pinned)||[] }; }
+function saveState(st){ store.save(st); }
+
+/* ---- fase lunar (cálculo astronómico, sin API) ---- */
+const SYNODIC = 29.53058867;
+function moonPhase(t){ // t = {y,mo,d}
+  const days = (Date.UTC(t.y, t.mo-1, t.d, 17) - Date.UTC(2000,0,6,18,14)) / 86400000;
+  let age = days % SYNODIC; if(age<0) age += SYNODIC;
+  const frac = age / SYNODIC;
+  const illum = Math.round(50*(1-Math.cos(2*Math.PI*frac)));
+  let name;
+  if(frac<0.033||frac>0.967) name="Luna nueva";
+  else if(frac<0.216) name="Creciente";
+  else if(frac<0.283) name="Cuarto creciente";
+  else if(frac<0.467) name="Gibosa creciente";
+  else if(frac<0.533) name="Luna llena";
+  else if(frac<0.717) name="Gibosa menguante";
+  else if(frac<0.783) name="Cuarto menguante";
+  else name="Menguante";
+  const dNew = Math.min(age, SYNODIC-age), dFull = Math.abs(age - SYNODIC/2);
+  const tide = (dNew<=2 || dFull<=2) ? "mareas vivas" : (Math.abs(age-SYNODIC/4)<=2 || Math.abs(age-3*SYNODIC/4)<=2) ? "mareas muertas" : "";
+  return {frac, illum, name, tide};
+}
+function moonSVG(frac, size){
+  const svgNS="http://www.w3.org/2000/svg";
+  const svg=document.createElementNS(svgNS,"svg");
+  svg.setAttribute("viewBox",`0 0 ${size} ${size}`);
+  svg.setAttribute("width",size); svg.setAttribute("height",size);
+  svg.setAttribute("class","moon-ico");
+  const c=size/2, r=size/2-1;
+  const base=document.createElementNS(svgNS,"circle");
+  base.setAttribute("cx",c); base.setAttribute("cy",c); base.setAttribute("r",r);
+  base.setAttribute("fill","var(--grid)"); base.setAttribute("stroke","var(--baseline)"); base.setAttribute("stroke-width","1");
+  svg.append(base);
+  const k=Math.cos(2*Math.PI*frac), waxing=frac<=0.5, rx=Math.abs(k)*r;
+  if(1-Math.abs(k)<0.04 && k<0){ // llena
+    base.setAttribute("fill","var(--text-secondary)");
+  } else if(1-Math.abs(k)>=0.001 && Math.abs(k)<0.999){
+    const p=document.createElementNS(svgNS,"path");
+    const outerSweep = waxing? 1:0;
+    const termSweep = (k>0) ? (waxing?0:1) : (waxing?1:0);
+    p.setAttribute("d",`M ${c} ${c-r} A ${r} ${r} 0 0 ${outerSweep} ${c} ${c+r} A ${rx.toFixed(2)} ${r} 0 0 ${termSweep} ${c} ${c-r} Z`);
+    p.setAttribute("fill","var(--text-secondary)");
+    svg.append(p);
+  }
+  return svg;
+}
 
 /* ================= helpers ================= */
 const $ = s => document.querySelector(s);
@@ -331,7 +424,8 @@ function metnoToLocal(metno){
 function consensus(sources, i){
   let sw=0, sv=0, mn=null, mx=null, n=0;
   sources.forEach(s=>{
-    const v = s.arr[i];
+    const j = i - (s.off||0);
+    const v = (j>=0 && j<s.arr.length) ? s.arr[j] : null;
     if(v==null) return;
     n++; sw+=s.w; sv+=s.w*v;
     if(mn==null||v<mn) mn=v;
@@ -359,12 +453,14 @@ function buildData(wx, sea, wxm, seam, metno){
 
   /* ---- consenso multi-modelo ---- */
   d.windBM = d.wind.slice(); d.waveBM = d.wave.slice(); // best_match de respaldo
+  const rawTime = wx.hourly.time;
   const mh = wxm && wxm.hourly ? wxm.hourly : null;
+  const mOff = mh && mh.time ? Math.max(0, rawTime.indexOf(mh.time[0])) : 0;
   d.windSrc = [];
   if(mh){
     MODELS_WX.forEach(m=>{
       const arr = mh["wind_speed_10m_"+m.id];
-      if(arr && arr.some(v=>v!=null)) d.windSrc.push({name:m.name, w:m.w, arr});
+      if(arr && arr.some(v=>v!=null)) d.windSrc.push({name:m.name, w:m.w, arr, off:mOff});
     });
   }
   if(metno){
@@ -373,11 +469,12 @@ function buildData(wx, sea, wxm, seam, metno){
     if(arr.some(v=>v!=null)) d.windSrc.push({name:"met.no", w:W_METNO, arr});
   }
   const sh = seam && seam.hourly ? seam.hourly : null;
+  const sOff = sh && sh.time ? Math.max(0, rawTime.indexOf(sh.time[0])) : 0;
   d.waveSrc = [];
   if(sh){
     MODELS_SEA.forEach(m=>{
       const arr = sh["wave_height_"+m.id];
-      if(arr && arr.some(v=>v!=null)) d.waveSrc.push({name:m.name, w:m.w, arr});
+      if(arr && arr.some(v=>v!=null)) d.waveSrc.push({name:m.name, w:m.w, arr, off:sOff});
     });
   }
   d.windSpread = new Array(n).fill(null); d.windMin = new Array(n).fill(null); d.windMax = new Array(n).fill(null);
@@ -440,11 +537,14 @@ function buildData(wx, sea, wxm, seam, metno){
       ][lvl];
       conf.wSpr = wSpr; conf.vSpr = vSpr;
     }
+    const dayHr = idxs.filter(i=>t[i].h>=6 && t[i].h<=18);
     d.days.push({
       conf,
       key:dk, di, t:parseISO(dk+"T12:00"), sunrise:sr, sunset:ss,
-      dawn, dawnIdx, clarity:cl, clarityL:clL,
+      dawn, dawnIdx, idxs, clarity:cl, clarityL:clL,
       best, bestAt,
+      moon: moonPhase(parseISO(dk+"T12:00")),
+      dayWind: avg(dayHr.map(i=>d.wind[i])), dayWave: avg(dayHr.map(i=>d.wave[i])),
       dawnWind: avg(dawnIdx.map(i=>d.wind[i])), dawnGust: avg(dawnIdx.map(i=>d.gust[i])),
       dawnWave: avg(dawnIdx.map(i=>d.wave[i])), dawnSwell: avg(dawnIdx.map(i=>d.swell[i])),
       dawnCloud: avg(dawnIdx.map(i=>d.cloud[i])), dawnPP: avg(dawnIdx.map(i=>d.pprob[i]))
@@ -453,6 +553,33 @@ function buildData(wx, sea, wxm, seam, metno){
   // index of "now" (first hour of today) — past_days offset
   d.todayKey = wx.daily.time[DAYS_PAST];
   d.futureDays = d.days.slice(DAYS_PAST);
+
+  /* ---- bitácora: días pasados con score >= REG_MIN ---- */
+  const st = loadState();
+  d.days.forEach((day, ix)=>{
+    if(day.key >= d.todayKey) return;
+    if(day.dawn == null || day.dawn < REG_MIN) return;
+    const prev = [1,2].map(k=> d.days[ix-k]).filter(Boolean).map(p=>({
+      key:p.key, dawn:p.dawn, wind:p.dayWind==null?null:+p.dayWind.toFixed(1),
+      wave:p.dayWave==null?null:+p.dayWave.toFixed(2), agua:p.clarityL.lbl
+    }));
+    st.entries[day.key] = {
+      key:day.key, dawn:day.dawn,
+      wind:day.dawnWind==null?null:+day.dawnWind.toFixed(1),
+      gust:day.dawnGust==null?null:+day.dawnGust.toFixed(1),
+      wave:day.dawnWave==null?null:+day.dawnWave.toFixed(2),
+      swell:day.dawnSwell==null?null:+day.dawnSwell.toFixed(2),
+      cloud:day.dawnCloud==null?null:Math.round(day.dawnCloud),
+      agua:day.clarityL.lbl, sr:fmtHM(day.sunrise),
+      moonName:day.moon.name, moonIllum:day.moon.illum, moonFrac:+day.moon.frac.toFixed(3), moonTide:day.moon.tide,
+      prev
+    };
+  });
+  // limpiar pins de días ya pasados
+  st.pinned = (st.pinned||[]).filter(k=> k >= d.todayKey);
+  saveState(st);
+  d.registro = Object.values(st.entries).sort((a,b)=> a.key<b.key?1:-1);
+  d.state = st;
   // tide extremes (local min/max)
   d.tideExt = [];
   if(d.hasTide){
@@ -481,7 +608,12 @@ function render(){
   $("#updated").textContent = "Actualizado " +
     now.toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"});
 
-  app.append(renderHero(), renderDays(), renderRadar());
+  app.append(renderHero());
+  const pinnedCard = renderPinned();
+  if(pinnedCard) app.append(pinnedCard);
+  app.append(renderDays(), renderRadar());
+  const regCard = renderRegistro();
+  if(regCard) app.append(regCard);
   app.append(renderFilters());
   const chartsBox = el("div"); chartsBox.id="charts";
   app.append(chartsBox);
@@ -537,8 +669,14 @@ function renderHero(){
       (dEntry.conf.wSpr!=null?("±"+f2(dEntry.conf.wSpr,0)+" kt"):"")
       +(dEntry.conf.vSpr!=null?(" ±"+f2(dEntry.conf.vSpr,1)+" m"):"")+" entre modelos"));
   }
+  const moonStat = (()=>{ const s=el("div","stat");
+    s.append(el("div","lbl","Luna"));
+    const v=el("div","val"); v.append(moonSVG(dEntry.moon.frac,16), document.createTextNode(dEntry.moon.name));
+    s.append(v, el("div","sub", dEntry.moon.illum+" % iluminada"+(dEntry.moon.tide? " · "+dEntry.moon.tide:"")));
+    return s; })();
   right.append(
     stat("Claridad", dEntry.clarityL.lbl, dEntry.clarityL.desc),
+    moonStat,
     stat("Nubes", f1(dEntry.dawnCloud,0)+" %", "lluvia "+f1(dEntry.dawnPP,0)+" %"),
     stat("Agua", (()=>{ const v=D.sst[D.t.findIndex(t=>t.key===dEntry.key)] ?? D.sst.find(x=>x!=null); return v!=null? f1(v,0)+" °C":"—"; })(),"temp. superficial")
   );
@@ -561,9 +699,15 @@ function renderDays(){
   const grid = el("div","days");
   D.futureDays.forEach((d,ix)=>{
     const box = el("div","day"+(ix===0?" today":""));
+    const isPinned = D.state.pinned.includes(d.key);
+    const pin = el("span","pin"+(isPinned?" on":""),"★");
+    pin.title = isPinned? "Quitar de destacados":"Destacar este día";
+    pin.addEventListener("click",ev=>{ ev.stopPropagation(); togglePin(d.key); });
+    box.append(pin);
     box.append(el("div","d1",ix===0?"Hoy":DOW[dowOf(d.t)]));
     box.append(el("div","d2",`${d.t.d} ${MON[d.t.mo-1]}`));
     box.append(chipEl(statusOf(d.dawn ?? 0),true));
+    box.addEventListener("click",()=>openDetail(d));
     const kv=(k,v)=>{const r=el("div","kv");r.append(el("span",null,k));const b=el("b",null,v);r.append(b);return r;};
     const f=(v,dd=1)=>v==null?"—":(Math.round(v*10**dd)/10**dd).toString();
     box.append(
@@ -602,6 +746,166 @@ function renderRadar(){
     });
   }
   return card;
+}
+
+function togglePin(key){
+  const st = D.state;
+  const ix = st.pinned.indexOf(key);
+  if(ix>=0) st.pinned.splice(ix,1); else st.pinned.push(key);
+  saveState(st);
+  closeDetail();
+  render();
+}
+
+function renderPinned(){
+  const pins = D.state.pinned.map(k=> D.futureDays.find(d=>d.key===k)).filter(Boolean);
+  if(!pins.length) return null;
+  const card = el("section","card");
+  card.append(el("h2",null,"★ Días destacados"));
+  const f=(v,dd=1)=>v==null?"—":(Math.round(v*10**dd)/10**dd).toString();
+  pins.sort((a,b)=> a.key<b.key?-1:1).forEach(d=>{
+    const row = el("div","radar-row");
+    row.style.cursor="pointer";
+    const when = el("div","radar-when", `${DOWL[dowOf(d.t)]} ${d.t.d} ${MON[d.t.mo-1]}`);
+    when.append(el("small",null,"sol "+fmtHM(d.sunrise)+" · "+d.moon.name.toLowerCase()+(d.moon.tide? " · "+d.moon.tide:"")));
+    const desc = el("div","radar-desc",
+      `Viento ${f(d.dawnWind,0)} kt · olas ${f(d.dawnWave)} m · agua ${d.clarityL.lbl.toLowerCase()}`+
+      (d.conf? ` · confianza ${d.conf.lbl.toLowerCase()}`:""));
+    const btn = el("button","ghost","Quitar");
+    btn.type="button";
+    btn.addEventListener("click",ev=>{ ev.stopPropagation(); togglePin(d.key); });
+    row.append(when, chipEl(statusOf(d.dawn ?? 0),true), desc, el("div","radar-score", d.dawn==null?"—":String(d.dawn)), btn);
+    row.addEventListener("click",()=>openDetail(d));
+    card.append(row);
+  });
+  if(!store.persistent) card.append(el("div","pin-note","Nota: en esta vista los destacados no se guardan entre sesiones; en la versión web sí."));
+  return card;
+}
+
+function renderRegistro(){
+  const card = el("section","card");
+  card.append(el("h2",null,`Bitácora — amaneceres con score ${REG_MIN}+`));
+  card.append(el("div","reg-note",
+    "Se registra automáticamente cada día pasado cuyo amanecer alcanzó "+REG_MIN+" o más (últimos 31 días de datos de modelo"+
+    (store.persistent? "; los anteriores quedan guardados en este navegador":"")+"). Incluye las condiciones de los 1–2 días previos y la fase lunar, para que identifiques patrones."));
+  if(!D.registro.length){
+    card.append(el("div","empty-note","Aún no hay días registrados — el último mes no tuvo amaneceres de "+REG_MIN+"+. La bitácora se irá llenando sola."));
+    return card;
+  }
+  const f=(v,dd=1)=>v==null?"—":(Math.round(v*10**dd)/10**dd).toString();
+  D.registro.slice(0,15).forEach(e=>{
+    const t = parseISO(e.key+"T12:00");
+    const row = el("div","radar-row");
+    const when = el("div","radar-when", `${DOWL[dowOf(t)]} ${t.d} ${MON[t.mo-1]}`);
+    const moonBit = el("small");
+    moonBit.append(moonSVG(e.moonFrac,13), document.createTextNode(
+      e.moonName+" "+e.moonIllum+" %"+(e.moonTide? " · "+e.moonTide:"")));
+    when.append(moonBit);
+    const desc = el("div","radar-desc");
+    desc.append(document.createTextNode(
+      `Viento ${f(e.wind,0)} kt (rachas ${f(e.gust,0)}) · olas ${f(e.wave)} m (fondo ${f(e.swell)}) · agua ${(e.agua||"—").toLowerCase()} · nubes ${f(e.cloud,0)} % · sol ${e.sr}`));
+    if(e.prev && e.prev.length){
+      const pv = el("div","reg-prev");
+      pv.textContent = "Días previos: " + e.prev.map(p=>{
+        const pt = parseISO(p.key+"T12:00");
+        return `${DOW[dowOf(pt)]} ${pt.d} — ${f(p.wind,0)} kt, ${f(p.wave)} m${p.dawn!=null?` (score ${p.dawn})`:""}`;
+      }).join(" · ");
+      desc.append(pv);
+    }
+    row.append(when, desc, el("div","radar-score",String(e.dawn)));
+    card.append(row);
+  });
+  if(D.registro.length>15) card.append(el("div","pin-note",`Mostrando 15 de ${D.registro.length} registros.`));
+  return card;
+}
+
+/* ---- hoja de detalle por día ---- */
+function closeDetail(){
+  const ov = document.querySelector(".overlay");
+  if(ov) ov.remove();
+  document.removeEventListener("keydown", escClose);
+}
+function escClose(ev){ if(ev.key==="Escape") closeDetail(); }
+function openDetail(day){
+  closeDetail();
+  const ov = el("div","overlay");
+  ov.addEventListener("click",ev=>{ if(ev.target===ov) closeDetail(); });
+  document.addEventListener("keydown", escClose);
+  const sh = el("div","sheet");
+  const x = el("button","ghost xclose","Cerrar"); x.type="button";
+  x.addEventListener("click",closeDetail);
+  sh.append(x);
+  sh.append(el("h3",null,`${DOWL[dowOf(day.t)]} ${day.t.d} de ${MON[day.t.mo-1]}`));
+  const sub = el("div","sub");
+  sub.append(chipEl(statusOf(day.dawn ?? 0),true),
+    document.createTextNode(`  Score amanecer ${day.dawn==null?"—":day.dawn} / 100 · sol ${fmtHM(day.sunrise)} – ocaso ${fmtHM(day.sunset)}`));
+  sh.append(sub);
+
+  const f=(v,dd=1)=>v==null?"—":(Math.round(v*10**dd)/10**dd).toLocaleString("es-MX");
+  const grid = el("div","grid");
+  const stat=(lbl,val,sub2)=>{const s=el("div","stat");s.append(el("div","lbl",lbl));
+    (val instanceof Node)? (()=>{const v=el("div","val");v.append(val);s.append(v);})() : s.append(el("div","val",val));
+    s.append(el("div","sub",sub2||""));return s;};
+  grid.append(
+    stat("Viento amanecer", f(day.dawnWind,0)+" kt", "rachas "+f(day.dawnGust,0)+" kt"),
+    stat("Olas", f(day.dawnWave)+" m", "fondo "+f(day.dawnSwell)+" m"),
+    stat("Claridad del agua", day.clarityL.lbl, day.clarityL.desc)
+  );
+  const moonVal = document.createDocumentFragment();
+  moonVal.append(moonSVG(day.moon.frac,16), document.createTextNode(day.moon.name));
+  grid.append(stat("Luna", moonVal, day.moon.illum+" % iluminada"+(day.moon.tide? " · "+day.moon.tide:"")));
+  if(day.conf) grid.append(stat("Confianza", day.conf.lbl, day.conf.desc));
+  grid.append(stat("Nubes / lluvia", f(day.dawnCloud,0)+" % · "+f(day.dawnPP,0)+" %", "en la ventana del amanecer"));
+  if(D.hasTide){
+    const srIdx = day.idxs.find(i=>D.t[i].h===day.sunrise.h);
+    const tstate = srIdx!=null? tideState(srIdx):null;
+    const exts = D.tideExt.filter(e2=> day.idxs.includes(e2.i) && D.t[e2.i].h>=4 && D.t[e2.i].h<=21)
+      .map(e2=> (e2.kind==="plea"?"plea ":"baja ")+fmtHM(D.t[e2.i])).join(" · ");
+    grid.append(stat("Marea", tstate? tstate[0].toUpperCase()+tstate.slice(1)+" al amanecer" : "—", exts));
+  }
+  sh.append(grid);
+
+  const di = D.days.indexOf(day);
+  const prevs = [1,2].map(k=>D.days[di-k]).filter(Boolean);
+  if(prevs.length){
+    const pb = el("div","prevbox");
+    const b = el("b",null,"Días previos (afectan claridad del agua): ");
+    pb.append(b, document.createTextNode(prevs.map(p=>
+      `${DOW[dowOf(p.t)]} ${p.t.d} — ${f(p.dayWind,0)} kt, ${f(p.dayWave)} m, agua ${p.clarityL.lbl.toLowerCase()}`).join(" · ")));
+    sh.append(pb);
+  }
+
+  const det = el("details","tbl"); det.open = true;
+  det.append(el("summary",null,"Condiciones hora por hora (05:00–19:00)"));
+  const tb = el("table");
+  const tr = el("tr");
+  ["Hora","Viento kt","Rachas","Ola m","Marea cm","Score"].forEach(h=>tr.append(el("th",null,h)));
+  tb.append(tr);
+  day.idxs.filter(i=>D.t[i].h>=5 && D.t[i].h<=19).forEach(i=>{
+    const r = el("tr");
+    const inDawn = D.t[i].h>=day.sunrise.h && D.t[i].h<=day.sunrise.h+3;
+    r.append(el("td",null,String(D.t[i].h).padStart(2,"0")+":00"+(inDawn?" ☀":"")));
+    [f(D.wind[i],0),f(D.gust[i],0),f(D.wave[i]),f(D.tide[i]==null?null:D.tide[i]*100,0)].forEach(v=>r.append(el("td",null,v)));
+    const sc = el("td",null, D.score[i]==null?"—":String(D.score[i]));
+    if(D.score[i]!=null && D.score[i]>=75) sc.style.color = "var(--st-good)";
+    r.append(sc);
+    tb.append(r);
+  });
+  det.append(tb);
+  sh.append(det);
+
+  const isPinned = D.state.pinned.includes(day.key);
+  const btns = el("div","btnrow");
+  const pinBtn = el("button", isPinned? "ghost":"primary", isPinned? "Quitar de destacados":"★ Destacar este día");
+  pinBtn.type="button";
+  pinBtn.addEventListener("click",()=>togglePin(day.key));
+  btns.append(pinBtn);
+  const wg = el("a",null,"Ver en Windguru"); wg.href="https://www.windguru.cz/197679"; wg.target="_blank"; wg.rel="noopener";
+  btns.append(wg);
+  sh.append(btns);
+
+  ov.append(sh);
+  document.querySelector(".viz-root").append(ov);
 }
 
 function renderFilters(){
@@ -837,7 +1141,8 @@ function drawChart(wrap, tt, series, opt){
       let any=false;
       const frag=document.createDocumentFragment();
       opt.models.forEach(m=>{
-        const v=m.arr[i];
+        const j = i - (m.off||0);
+        const v = (j>=0 && j<m.arr.length) ? m.arr[j] : null;
         if(v==null) return;
         any=true;
         const row=el("div","tt-m");
