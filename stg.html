@@ -199,6 +199,7 @@
   <div class="foot">
     <b>Cómo se calcula:</b> cada hora recibe un score 0–100 combinando viento (nudos, 55%) y altura de ola (45%),
     con ajustes por rachas, dirección terral, probabilidad de lluvia y un índice de claridad del agua
+    calibrado con observaciones reales en el canal (28 jul 2026)
     (horas de calma en las 36 h previas — mar quieto = agua cristalina y fondo visible).
     Amanecer = salida del sol +3 h. Semáforo: ● Bonanza ≥75 · ◆ Aceptable 55–74 · ▲ Exigente 35–54 · ■ No apto &lt;35.
     La <b>bitácora</b> guarda automáticamente los amaneceres pasados con score 90+ junto con sus días previos y la fase lunar
@@ -370,7 +371,12 @@ function hourScore(i){
   if(pp!=null && pp>50) s-=10;                                // lluvia probable
   if(dir!=null && w!=null && dir>=200 && dir<=340 && w<10) s+=4; // terral suave aplana el mar
   const cu=D.cur[i];
-  if(cu!=null){ if(cu>1.5) s-=14; else if(cu>1.0) s-=8; else if(cu>0.6) s-=3; } // corriente del canal
+  if(cu!=null){
+    // Calibrado 28-jul-2026: con mareas vivas (luna llena/nueva) la corriente real del canal
+    // pulsa por zonas y supera lo que marca el modelo — se pondera 1.35× para el score.
+    const ce = moonPhase(D.t[i]).tide==="mareas vivas" ? cu*1.35 : cu;
+    if(ce>1.5) s-=14; else if(ce>1.0) s-=8; else if(ce>0.6) s-=3; // corriente del canal
+  }
   return clamp(Math.round(s),0,100);
 }
 function statusOf(s){
@@ -386,22 +392,27 @@ function chipEl(st, small){
   return c;
 }
 
-/* clarity: fraction of previous 36h (before given index) that was calm */
+/* clarity: weighted calm fraction of previous 30h (before given index).
+   Calibrado con observación de campo 28-jul-2026: el canal aclara tras ~1 día de calma
+   (fondo a 10 m con visor, 20–30 m a distancia, tras solo un día quieto), así que las
+   horas recientes pesan hasta 3× más que las de hace 30 h. */
 function clarityAt(idx){
-  let n=0, calm=0;
-  for(let i=Math.max(0,idx-36); i<idx; i++){
+  const span=30;
+  let wsum=0, calm=0;
+  for(let i=Math.max(0,idx-span); i<idx; i++){
     const w=D.wind[i], h=D.wave[i];
     if(w==null && h==null) continue;
-    n++;
-    if((w==null||w<=10) && (h==null||h<=0.5)) calm++;
+    const wt = 1 + 2*Math.max(0,(i-(idx-span)))/span; // 1× lejano → 3× reciente
+    wsum+=wt;
+    if((w==null||w<=10) && (h==null||h<=0.5)) calm+=wt;
   }
-  if(!n) return null;
-  return calm/n;
+  if(!wsum) return null;
+  return calm/wsum;
 }
 function clarityLabel(f){
   if(f==null) return {lbl:"—", adj:0, desc:""};
-  if(f>=0.85) return {lbl:"Cristalina", adj:5, desc:"mar quieto 36 h: fondo visible"};
-  if(f>=0.55) return {lbl:"Aclarando", adj:0, desc:"el mar se va asentando"};
+  if(f>=0.78) return {lbl:"Cristalina", adj:5, desc:"~1 día de calma: fondo visible"};
+  if(f>=0.5) return {lbl:"Aclarando", adj:0, desc:"el mar se va asentando"};
   return {lbl:"Revuelta", adj:-8, desc:"mar movido reciente: agua turbia"};
 }
 
@@ -675,10 +686,22 @@ function renderHero(){
     const next = D.tideExt.find(e=>e.i>srIdx);
     right.append(stat("Marea", tstate? tstate[0].toUpperCase()+tstate.slice(1) : "—",
       next? (next.kind==="plea"?"pleamar ":"bajamar ")+fmtHM(D.t[next.i]) : ""));
+    // Mejor ventana: validado en campo 28-jul-2026 — al llegar la estoa (pleamar/bajamar)
+    // el canal se aquieta y queda "plato"; el regreso cuesta menos.
+    if(next){
+      const nt=D.t[next.i];
+      if(nt && nt.key===dEntry.key && nt.h>=dEntry.sunrise.h && nt.h<=dEntry.sunrise.h+4){
+        right.append(stat("Mejor ventana", "hacia las "+fmtHM(nt),
+          next.kind==="plea"? "estoa de pleamar: el canal se aquieta" : "estoa de bajamar: corriente mínima"));
+      }
+    }
   }
   if(D.hasCur && dEntry.dawnCur!=null){
+    const spring = dEntry.moon.tide==="mareas vivas";
     right.append(stat("Corriente", f1(dEntry.dawnCur)+" kt",
-      (dEntry.dawnCurDir!=null? "hacia el "+compass(dEntry.dawnCurDir)+" · ":"")+(dEntry.dawnCur>1? "fuerte para nado":"manejable")));
+      (dEntry.dawnCurDir!=null? "hacia el "+compass(dEntry.dawnCurDir)+" · ":"")
+      +(dEntry.dawnCur>1? "fuerte para nado":"manejable")
+      +(spring? " · a pulsos por zonas (mareas vivas)":"")));
   }
   if(dEntry.conf){
     const f2=(v,dd)=>v==null?"":(Math.round(v*10**dd)/10**dd).toLocaleString("es-MX");
@@ -869,7 +892,8 @@ function openDetail(day){
     stat("Claridad del agua", day.clarityL.lbl, day.clarityL.desc)
   );
   if(D.hasCur && day.dawnCur!=null) grid.append(stat("Corriente amanecer", f(day.dawnCur)+" kt",
-    (day.dawnCurDir!=null? "hacia el "+compass(day.dawnCurDir):"")+(day.dawnCur>1? " · fuerte para nado":"")));
+    (day.dawnCurDir!=null? "hacia el "+compass(day.dawnCurDir):"")+(day.dawnCur>1? " · fuerte para nado":"")
+    +(day.moon.tide==="mareas vivas"? " · a pulsos por zonas (mareas vivas)":"")));
   const moonVal = document.createDocumentFragment();
   moonVal.append(moonSVG(day.moon.frac,16), document.createTextNode(day.moon.name));
   grid.append(stat("Luna", moonVal, day.moon.illum+" % iluminada"+(day.moon.tide? " · "+day.moon.tide:"")));
