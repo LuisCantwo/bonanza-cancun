@@ -199,7 +199,9 @@
   <div class="foot">
     <b>Cómo se calcula:</b> cada hora recibe un score 0–100 combinando viento (nudos, 55%) y altura de ola (45%),
     con ajustes por rachas, dirección terral, probabilidad de lluvia y un índice de claridad del agua
-    calibrado con observaciones reales en el canal (28 jul 2026)
+    calibrado con observaciones reales en el canal (28 jul 2026). El oleaje se corrige por el
+    <b>abrigo de Isla Mujeres</b> (el swell de mar abierto entra atenuado al canal) y la claridad
+    considera la <b>lluvia reciente</b> (el desagüe de la laguna enturbia tras aguaceros)
     (horas de calma en las 36 h previas — mar quieto = agua cristalina y fondo visible).
     Amanecer = salida del sol +3 h. Semáforo: ● Bonanza ≥75 · ◆ Aceptable 55–74 · ▲ Exigente 35–54 · ■ No apto &lt;35.
     La <b>bitácora</b> guarda automáticamente los amaneceres pasados con score 90+ junto con sus días previos y la fase lunar
@@ -227,12 +229,26 @@ const TH = {
   windGood: 8, windOk: 11,        // kt
   waveGood: 0.4, waveOk: 0.6,     // m
 };
+/* Calibración #4 "factor canal" (28-jul-2026, constantes provisionales).
+   El punto de malla marino real está ~7 km mar adentro (21.13, -86.71): Isla Mujeres
+   abriga el canal del swell del Caribe, y la lluvia fuerte enturbia vía el desagüe
+   de la laguna Nichupté. Anclas de campo: 19-jul (plano y agua clara con 0.83 m de
+   ola afuera), 27-jul (agua turbia con canal en calma), 28-jul (cristalina). */
+const CANAL = {
+  kWsea: 0.7,     // fracción de la ola de viento local que entra al canal
+  kSwell: 0.3,    // fracción del fondo (swell) de mar abierto que entra
+  residTh: 0.15,  // m de fondo residual que ya se sienten (sube-y-baja suave)
+  residPen: 4,    // puntos de castigo por fondo residual
+  calmWave: 0.40, // m de ola en canal considerados "calma" para la claridad
+  rainWin: 60,    // h: ventana de lluvia que aún enturbia
+  rainTh: 3.6     // mm ponderados: umbral de agua revuelta por lluvia (afinar con campo)
+};
 const DAYS_FWD = 8, DAYS_PAST = 31;   // 31 días de hindcast para la bitácora
 const DAYS_PAST_MODELS = 2;           // multi-modelo solo necesita contexto corto
 const REG_MIN = 90;                   // umbral de la bitácora
 const STORE_KEY = "bonanzaCancunStgV1";
 const URL_WX = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}`
-  + `&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,precipitation_probability,temperature_2m`
+  + `&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,precipitation_probability,precipitation,temperature_2m`
   + `&daily=sunrise,sunset&timezone=America%2FCancun&wind_speed_unit=kn`
   + `&forecast_days=${DAYS_FWD}&past_days=${DAYS_PAST}`;
 const URL_SEA = `https://marine-api.open-meteo.com/v1/marine?latitude=${LAT}&longitude=${LON}`
@@ -363,13 +379,14 @@ function waveScore(h){
   return 0;
 }
 function hourScore(i){
-  const w=D.wind[i], g=D.gust[i], dir=D.wdir[i], h=D.wave[i], pp=D.pprob[i];
+  const w=D.wind[i], g=D.gust[i], dir=D.wdir[i], h=chanWave(i), pp=D.pprob[i]; // calibración #4: ola del canal, no de mar abierto
   const ws=windScore(w), vs=waveScore(h);
   if(ws==null && vs==null) return null;
   let s = (ws!=null && vs!=null) ? 0.55*ws+0.45*vs : (ws!=null?ws:vs);
   if(w!=null && g!=null && g-w>7) s-=8;                       // rachas irregulares
   if(pp!=null && pp>50) s-=10;                                // lluvia probable
   if(dir!=null && w!=null && dir>=200 && dir<=340 && w<10) s+=4; // terral suave aplana el mar
+  if(chanResid(i)>CANAL.residTh) s-=CANAL.residPen;           // fondo residual perceptible en el canal
   const cu=D.cur[i];
   if(cu!=null){
     // Calibrado 28-jul-2026: con mareas vivas (luna llena/nueva) la corriente real del canal
@@ -392,6 +409,28 @@ function chipEl(st, small){
   return c;
 }
 
+/* ---- calibración #4: ola efectiva dentro del canal y turbidez por lluvia ---- */
+function chanResid(i){ // fondo (swell) que sobrevive el abrigo de Isla Mujeres
+  const s=D.swell[i], o=D.wave[i];
+  return s==null? 0 : CANAL.kSwell*(o!=null? Math.min(s,o) : s);
+}
+function chanWave(i){ // ola efectiva en el canal: componente de viento + fondo filtrado (energía)
+  const o=D.wave[i], s=D.swell[i];
+  if(o==null) return null;
+  if(s==null) return o;
+  const wsea = Math.sqrt(Math.max(0, o*o - s*s));
+  return Math.sqrt((CANAL.kWsea*wsea)**2 + chanResid(i)**2);
+}
+function rainTurbAt(idx){ // mm ponderados de las últimas rainWin horas (decaimiento lineal)
+  const pr=D.precip; if(!pr || !pr.some(v=>v!=null)) return null;
+  let s=0;
+  for(let i=Math.max(0,idx-CANAL.rainWin); i<idx; i++){
+    const p=pr[i]; if(p==null) continue;
+    s += p * (1 - (idx-i)/CANAL.rainWin);
+  }
+  return s;
+}
+
 /* clarity: weighted calm fraction of previous 30h (before given index).
    Calibrado con observación de campo 28-jul-2026: el canal aclara tras ~1 día de calma
    (fondo a 10 m con visor, 20–30 m a distancia, tras solo un día quieto), así que las
@@ -400,16 +439,19 @@ function clarityAt(idx){
   const span=30;
   let wsum=0, calm=0;
   for(let i=Math.max(0,idx-span); i<idx; i++){
-    const w=D.wind[i], h=D.wave[i];
+    const w=D.wind[i], h=chanWave(i); // calibración #4: la claridad depende del mar DEL CANAL
     if(w==null && h==null) continue;
     const wt = 1 + 2*Math.max(0,(i-(idx-span)))/span; // 1× lejano → 3× reciente
     wsum+=wt;
-    if((w==null||w<=10) && (h==null||h<=0.5)) calm+=wt;
+    if((w==null||w<=10) && (h==null||h<=CANAL.calmWave)) calm+=wt;
   }
   if(!wsum) return null;
   return calm/wsum;
 }
-function clarityLabel(f){
+function clarityLabel(f, rain){
+  // calibración #4: lluvia fuerte reciente enturbia el canal (desagüe de la Nichupté),
+  // aunque el mar esté en calma — validado 27-jul (turbia) vs 28-jul (cristalina)
+  if(rain!=null && rain>CANAL.rainTh) return {lbl:"Revuelta", adj:-8, desc:"lluvia reciente: el desagüe de la laguna enturbia"};
   if(f==null) return {lbl:"—", adj:0, desc:""};
   if(f>=0.78) return {lbl:"Cristalina", adj:5, desc:"~1 día de calma: fondo visible"};
   if(f>=0.5) return {lbl:"Aclarando", adj:0, desc:"el mar se va asentando"};
@@ -460,7 +502,7 @@ function buildData(wx, sea, wxm, seam, metno){
   const d = {
     t, n,
     wind: pick(wx,"wind_speed_10m"), gust: pick(wx,"wind_gusts_10m"), wdir: pick(wx,"wind_direction_10m"),
-    cloud: pick(wx,"cloud_cover"), pprob: pick(wx,"precipitation_probability"), temp: pick(wx,"temperature_2m"),
+    cloud: pick(wx,"cloud_cover"), pprob: pick(wx,"precipitation_probability"), precip: pick(wx,"precipitation"), temp: pick(wx,"temperature_2m"),
     wave: pick(sea,"wave_height"), wvper: pick(sea,"wave_period"),
     swell: pick(sea,"swell_wave_height"), swper: pick(sea,"swell_wave_period"),
     tide: pick(sea,"sea_level_height_msl"), sst: pick(sea,"sea_surface_temperature"),
@@ -530,8 +572,9 @@ function buildData(wx, sea, wxm, seam, metno){
     const sr = sunrise[di], ss = sunset[di];
     const dawnIdx = idxs.filter(i=>t[i].h>=sr.h && t[i].h<=sr.h+3);
     const dawnScores = dawnIdx.map(i=>d.score[i]).filter(v=>v!=null);
-    const cl = clarityAt(idxs.find(i=>t[i].h===sr.h) ?? idxs[0]);
-    const clL = clarityLabel(cl);
+    const clIdx = idxs.find(i=>t[i].h===sr.h) ?? idxs[0];
+    const cl = clarityAt(clIdx);
+    const clL = clarityLabel(cl, rainTurbAt(clIdx));
     let dawn = dawnScores.length? Math.round(dawnScores.reduce((a,b)=>a+b,0)/dawnScores.length) : null;
     if(dawn!=null) dawn = clamp(dawn + clL.adj, 0, 100);
     // best 3h window of daytime
@@ -569,6 +612,7 @@ function buildData(wx, sea, wxm, seam, metno){
       dayWind: avg(dayHr.map(i=>d.wind[i])), dayWave: avg(dayHr.map(i=>d.wave[i])),
       dawnWind: avg(dawnIdx.map(i=>d.wind[i])), dawnGust: avg(dawnIdx.map(i=>d.gust[i])),
       dawnWave: avg(dawnIdx.map(i=>d.wave[i])), dawnSwell: avg(dawnIdx.map(i=>d.swell[i])),
+      dawnChan: avg(dawnIdx.map(i=>chanWave(i))), dawnRain: (()=>{const r=rainTurbAt(clIdx); return r==null?null:+r.toFixed(1);})(),
       dawnCloud: avg(dawnIdx.map(i=>d.cloud[i])), dawnPP: avg(dawnIdx.map(i=>d.pprob[i])),
       dawnCur: avg(dawnIdx.map(i=>d.cur[i])), dawnCurDir: dawnIdx.length? d.curdir[dawnIdx[0]] : null
     });
@@ -678,7 +722,7 @@ function renderHero(){
   const f1=(v,d=1)=> v==null?"—":(Math.round(v*10**d)/10**d).toLocaleString("es-MX");
   right.append(
     stat("Viento", f1(dEntry.dawnWind,0)+" kt", "rachas "+f1(dEntry.dawnGust,0)+" kt"),
-    stat("Olas", f1(dEntry.dawnWave)+" m", "fondo "+f1(dEntry.dawnSwell)+" m"),
+    stat("Olas", f1(dEntry.dawnWave)+" m", "en canal ≈ "+f1(dEntry.dawnChan)+" m · fondo "+f1(dEntry.dawnSwell)+" m"),
   );
   if(D.hasTide){
     const srIdx = D.t.findIndex(tt=>tt.key===dEntry.key && tt.h===dEntry.sunrise.h);
@@ -888,7 +932,7 @@ function openDetail(day){
     s.append(el("div","sub",sub2||""));return s;};
   grid.append(
     stat("Viento amanecer", f(day.dawnWind,0)+" kt", "rachas "+f(day.dawnGust,0)+" kt"),
-    stat("Olas", f(day.dawnWave)+" m", "fondo "+f(day.dawnSwell)+" m"),
+    stat("Olas", f(day.dawnWave)+" m", "en canal ≈ "+f(day.dawnChan)+" m · fondo "+f(day.dawnSwell)+" m"),
     stat("Claridad del agua", day.clarityL.lbl, day.clarityL.desc)
   );
   if(D.hasCur && day.dawnCur!=null) grid.append(stat("Corriente amanecer", f(day.dawnCur)+" kt",
