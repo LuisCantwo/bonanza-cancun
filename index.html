@@ -223,6 +223,16 @@ const TH = {
   windGood: 8, windOk: 11,        // kt
   waveGood: 0.4, waveOk: 0.6,     // m
 };
+/* Corrección del punto de medición (30-jul-2026, validado en campo el 19 y 28 de julio).
+   El punto de malla del modelo marino está ~7 km mar adentro, al SE de Punta Cancún
+   (21.13, -86.71) — mar abierto. El canal está abrigado por Isla Mujeres: el fondo (swell)
+   del Caribe entra atenuado (~30%) y la ola de viento local no puede exceder lo que el
+   viento realmente genera. El score puntúa la ola TRADUCIDA AL CANAL, no la de mar abierto. */
+const CANAL = {
+  kWsea: 0.7,    // fracción de la ola de viento que entra al canal
+  kSwell: 0.3,   // fracción del fondo (swell) de mar abierto que entra
+  wseaA: 0.0035, wseaB: 0.03 // tope físico de ola de viento local: 0.0035·kt² + 0.03 m
+};
 const DAYS_FWD = 8, DAYS_PAST = 31;   // 31 días de hindcast para la bitácora
 const DAYS_PAST_MODELS = 2;           // multi-modelo solo necesita contexto corto
 const REG_MIN = 90;                   // umbral de la bitácora
@@ -355,8 +365,19 @@ function waveScore(h){
   if(h<=1.2) return lerp(h,0.9,1.2,20,0);
   return 0;
 }
+/* ola efectiva dentro del canal (ver nota en CANAL) */
+function chanWave(i){
+  const o=D.wave[i], s=D.swell[i];
+  if(o==null) return null;
+  if(s==null) return o;
+  const resid = CANAL.kSwell*Math.min(s,o);
+  let wsea = Math.sqrt(Math.max(0, o*o - s*s));
+  const w = D.wind[i];
+  if(w!=null) wsea = Math.min(wsea, CANAL.wseaA*w*w + CANAL.wseaB);
+  return Math.sqrt((CANAL.kWsea*wsea)**2 + resid**2);
+}
 function hourScore(i){
-  const w=D.wind[i], g=D.gust[i], dir=D.wdir[i], h=D.wave[i], pp=D.pprob[i];
+  const w=D.wind[i], g=D.gust[i], dir=D.wdir[i], h=chanWave(i), pp=D.pprob[i]; // ola del canal, no de mar abierto
   const ws=windScore(w), vs=waveScore(h);
   if(ws==null && vs==null) return null;
   let s = (ws!=null && vs!=null) ? 0.55*ws+0.45*vs : (ws!=null?ws:vs);
@@ -547,6 +568,7 @@ function buildData(wx, sea, wxm, seam, metno){
       dayWind: avg(dayHr.map(i=>d.wind[i])), dayWave: avg(dayHr.map(i=>d.wave[i])),
       dawnWind: avg(dawnIdx.map(i=>d.wind[i])), dawnGust: avg(dawnIdx.map(i=>d.gust[i])),
       dawnWave: avg(dawnIdx.map(i=>d.wave[i])), dawnSwell: avg(dawnIdx.map(i=>d.swell[i])),
+      dawnChan: avg(dawnIdx.map(i=>chanWave(i))),
       dawnCloud: avg(dawnIdx.map(i=>d.cloud[i])), dawnPP: avg(dawnIdx.map(i=>d.pprob[i]))
     });
   });
@@ -654,7 +676,7 @@ function renderHero(){
   const f1=(v,d=1)=> v==null?"—":(Math.round(v*10**d)/10**d).toLocaleString("es-MX");
   right.append(
     stat("Viento", f1(dEntry.dawnWind,0)+" kt", "rachas "+f1(dEntry.dawnGust,0)+" kt"),
-    stat("Olas", f1(dEntry.dawnWave)+" m", "fondo "+f1(dEntry.dawnSwell)+" m"),
+    stat("Olas", f1(dEntry.dawnWave)+" m", "en canal ≈ "+f1(dEntry.dawnChan)+" m · fondo "+f1(dEntry.dawnSwell)+" m"),
   );
   if(D.hasTide){
     const srIdx = D.t.findIndex(tt=>tt.key===dEntry.key && tt.h===dEntry.sunrise.h);
@@ -848,7 +870,7 @@ function openDetail(day){
     s.append(el("div","sub",sub2||""));return s;};
   grid.append(
     stat("Viento amanecer", f(day.dawnWind,0)+" kt", "rachas "+f(day.dawnGust,0)+" kt"),
-    stat("Olas", f(day.dawnWave)+" m", "fondo "+f(day.dawnSwell)+" m"),
+    stat("Olas", f(day.dawnWave)+" m", "en canal ≈ "+f(day.dawnChan)+" m · fondo "+f(day.dawnSwell)+" m"),
     stat("Claridad del agua", day.clarityL.lbl, day.clarityL.desc)
   );
   const moonVal = document.createDocumentFragment();
