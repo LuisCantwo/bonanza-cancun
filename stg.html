@@ -201,7 +201,9 @@
     con ajustes por rachas, dirección terral, probabilidad de lluvia y un índice de claridad del agua
     calibrado con observaciones reales en el canal (28 jul 2026). El oleaje se corrige por el
     <b>abrigo de Isla Mujeres</b> (el swell de mar abierto entra atenuado al canal) y la claridad
-    considera la <b>lluvia reciente</b> (el desagüe de la laguna enturbia tras aguaceros)
+    considera la <b>lluvia reciente</b> (el desagüe de la laguna enturbia tras aguaceros).
+    La escala está re-anclada con testimonio de campo: <b>el 98 es el techo práctico</b> —
+    un 100 no existe porque siempre hay algo de oleaje, corriente o viento
     (horas de calma en las 36 h previas — mar quieto = agua cristalina y fondo visible).
     Amanecer = salida del sol +3 h. Semáforo: ● Bonanza ≥75 · ◆ Aceptable 55–74 · ▲ Exigente 35–54 · ■ No apto &lt;35.
     La <b>bitácora</b> guarda automáticamente los amaneceres pasados con score 90+ junto con sus días previos y la fase lunar
@@ -243,6 +245,19 @@ const CANAL = {
   rainWin: 60,    // h: ventana de lluvia que aún enturbia
   rainTh: 3.6     // mm ponderados: umbral de agua revuelta por lluvia (afinar con campo)
 };
+/* Calibración #5 (29-jul-2026): un 100 es imposible por definición — siempre hay algo de
+   oleaje, corriente o viento. Escala re-anclada con testimonio: 19-jul = 98 (el mejor día
+   contado) y 28-jul = 97, un peldaño abajo por los pulsos de mareas vivas. Tope asintótico
+   en 98.4: el 98 es el techo práctico mostrable. Corriente penaliza desde el primer nudo. */
+const SCORE = {
+  knee: 97,      // donde empieza la compresión del tope
+  span: 1.4,     // asíntota = knee+span = 98.4 (nunca se muestra 99 ni 100)
+  tau: 1.5,      // suavidad de la asíntota
+  corrA: 3, corrB: 6, corrMax: 16, // castigo continuo de corriente: 3·kt + 6·kt²
+  vivasPen: 2.5, // castigo plano por pulsos/arrastres con mareas vivas (validado 28-jul)
+  wseaA: 0.0035, wseaB: 0.03 // tope físico de ola de viento local: 0.0035·kt² + 0.03 m
+};
+const softTop = s => s<=SCORE.knee ? s : SCORE.knee + SCORE.span*(1-Math.exp(-(s-SCORE.knee)/SCORE.tau));
 const DAYS_FWD = 8, DAYS_PAST = 31;   // 31 días de hindcast para la bitácora
 const DAYS_PAST_MODELS = 2;           // multi-modelo solo necesita contexto corto
 const REG_MIN = 90;                   // umbral de la bitácora
@@ -362,18 +377,18 @@ function lerp(x,x0,x1,y0,y1){ return y0+(y1-y0)*((x-x0)/(x1-x0)); }
 /* ================= scoring ================= */
 function windScore(w){
   if(w==null) return null;
-  if(w<=5) return 100;
-  if(w<=8) return lerp(w,5,8,100,75);
+  if(w<=5) return 100 - w*1.0; // calibración #5: continuo — 2 kt no es lo mismo que 0 kt
+  if(w<=8) return lerp(w,5,8,95,75);
   if(w<=10) return lerp(w,8,10,75,55);
   if(w<=12) return lerp(w,10,12,55,35);
   if(w<=16) return lerp(w,12,16,35,5);
   return 0;
 }
-function waveScore(h){
+function waveScore(h){ // calibración #5: continuo desde 0 (escala de ola EN CANAL)
   if(h==null) return null;
-  if(h<=0.2) return 100;
-  if(h<=0.4) return lerp(h,0.2,0.4,100,75);
-  if(h<=0.6) return lerp(h,0.4,0.6,75,50);
+  if(h<=0.25) return 100 - (h/0.25)*8;
+  if(h<=0.45) return lerp(h,0.25,0.45,92,68);
+  if(h<=0.6) return lerp(h,0.45,0.6,68,50);
   if(h<=0.9) return lerp(h,0.6,0.9,50,20);
   if(h<=1.2) return lerp(h,0.9,1.2,20,0);
   return 0;
@@ -386,15 +401,17 @@ function hourScore(i){
   if(w!=null && g!=null && g-w>7) s-=8;                       // rachas irregulares
   if(pp!=null && pp>50) s-=10;                                // lluvia probable
   if(dir!=null && w!=null && dir>=200 && dir<=340 && w<10) s+=4; // terral suave aplana el mar
-  if(chanResid(i)>CANAL.residTh) s-=CANAL.residPen;           // fondo residual perceptible en el canal
   const cu=D.cur[i];
   if(cu!=null){
-    // Calibrado 28-jul-2026: con mareas vivas (luna llena/nueva) la corriente real del canal
-    // pulsa por zonas y supera lo que marca el modelo — se pondera 1.35× para el score.
-    const ce = moonPhase(D.t[i]).tide==="mareas vivas" ? cu*1.35 : cu;
-    if(ce>1.5) s-=14; else if(ce>1.0) s-=8; else if(ce>0.6) s-=3; // corriente del canal
+    // Calibración #5: la corriente penaliza desde el primer nudo (nunca es "gratis").
+    // Con mareas vivas (luna llena/nueva) pulsa por zonas y arrastra — validado 28-jul:
+    // se pondera 1.35× y se suma castigo plano por los pulsos.
+    const vivas = moonPhase(D.t[i]).tide==="mareas vivas";
+    const ce = vivas ? cu*1.35 : cu;
+    s -= Math.min(SCORE.corrMax, SCORE.corrA*ce + SCORE.corrB*ce*ce);
+    if(vivas) s -= SCORE.vivasPen;
   }
-  return clamp(Math.round(s),0,100);
+  return clamp(Math.round(softTop(s)),0,100);
 }
 function statusOf(s){
   if(s>=75) return {k:"good", ico:"●", lbl:"Bonanza", col:"var(--st-good)"};
@@ -418,7 +435,11 @@ function chanWave(i){ // ola efectiva en el canal: componente de viento + fondo 
   const o=D.wave[i], s=D.swell[i];
   if(o==null) return null;
   if(s==null) return o;
-  const wsea = Math.sqrt(Math.max(0, o*o - s*s));
+  let wsea = Math.sqrt(Math.max(0, o*o - s*s));
+  // calibración #5: la ola de viento no puede exceder lo que el viento local genera
+  // (limpia artefactos de la descomposición ola-fondo entre consensos distintos)
+  const w = D.wind[i];
+  if(w!=null) wsea = Math.min(wsea, SCORE.wseaA*w*w + SCORE.wseaB);
   return Math.sqrt((CANAL.kWsea*wsea)**2 + chanResid(i)**2);
 }
 function rainTurbAt(idx){ // mm ponderados de las últimas rainWin horas (decaimiento lineal)
@@ -453,8 +474,8 @@ function clarityLabel(f, rain){
   // aunque el mar esté en calma — validado 27-jul (turbia) vs 28-jul (cristalina)
   if(rain!=null && rain>CANAL.rainTh) return {lbl:"Revuelta", adj:-8, desc:"lluvia reciente: el desagüe de la laguna enturbia"};
   if(f==null) return {lbl:"—", adj:0, desc:""};
-  if(f>=0.78) return {lbl:"Cristalina", adj:5, desc:"~1 día de calma: fondo visible"};
-  if(f>=0.5) return {lbl:"Aclarando", adj:0, desc:"el mar se va asentando"};
+  if(f>=0.78) return {lbl:"Cristalina", adj:2, desc:"~1 día de calma: fondo visible"};
+  if(f>=0.5) return {lbl:"Aclarando", adj:-2, desc:"el mar se va asentando"};
   return {lbl:"Revuelta", adj:-8, desc:"mar movido reciente: agua turbia"};
 }
 
@@ -575,8 +596,8 @@ function buildData(wx, sea, wxm, seam, metno){
     const clIdx = idxs.find(i=>t[i].h===sr.h) ?? idxs[0];
     const cl = clarityAt(clIdx);
     const clL = clarityLabel(cl, rainTurbAt(clIdx));
-    let dawn = dawnScores.length? Math.round(dawnScores.reduce((a,b)=>a+b,0)/dawnScores.length) : null;
-    if(dawn!=null) dawn = clamp(dawn + clL.adj, 0, 100);
+    let dawn = dawnScores.length? dawnScores.reduce((a,b)=>a+b,0)/dawnScores.length : null;
+    if(dawn!=null) dawn = clamp(Math.round(softTop(dawn + clL.adj)), 0, 100); // calibración #5: tope asintótico
     // best 3h window of daytime
     let best=null, bestAt=null;
     const dayIdx = idxs.filter(i=>t[i].h>=6 && t[i].h<=19);
