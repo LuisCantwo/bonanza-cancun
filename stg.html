@@ -203,7 +203,10 @@
     <b>abrigo de Isla Mujeres</b> (el swell de mar abierto entra atenuado al canal) y la claridad
     considera la <b>lluvia reciente</b> (el desagüe de la laguna enturbia tras aguaceros).
     La escala está re-anclada con testimonio de campo: <b>el 98 es el techo práctico</b> —
-    un 100 no existe porque siempre hay algo de oleaje, corriente o viento
+    un 100 no existe porque siempre hay algo de oleaje, corriente o viento. La <b>corriente del
+    canal</b> se estima con dos celdas del modelo (sur y salida norte) amplificadas ≈2× por el
+    embudo entre tierra e Isla Mujeres; cuando pinta sostenida y sin estoa en la ventana, el
+    score se limita y se pide confirmarla en sitio — es la variable menos predecible del sistema
     (horas de calma en las 36 h previas — mar quieto = agua cristalina y fondo visible).
     Amanecer = salida del sol +3 h. Semáforo: ● Bonanza ≥75 · ◆ Aceptable 55–74 · ▲ Exigente 35–54 · ■ No apto &lt;35.
     La <b>bitácora</b> guarda automáticamente los amaneceres pasados con score 90+ junto con sus días previos y la fase lunar
@@ -243,7 +246,15 @@ const CANAL = {
   residPen: 4,    // puntos de castigo por fondo residual
   calmWave: 0.40, // m de ola en canal considerados "calma" para la claridad
   rainWin: 60,    // h: ventana de lluvia que aún enturbia
-  rainTh: 3.6     // mm ponderados: umbral de agua revuelta por lluvia (afinar con campo)
+  rainTh: 3.6,    // mm ponderados: umbral de agua revuelta por lluvia (afinar con campo)
+  /* Calibración #6 (3-ago-2026, auditoría del falso positivo del 2-ago): la celda sur de
+     corriente es ciega (0.22 kt plano en días opuestos). La celda norte (21.21, -86.71,
+     salida del canal) sí discrimina: 19-jul 0.27 plano (día perfecto), 28-jul 0.38→0.22
+     cayendo a estoa (pulsos manejables), 2-ago 0.22→0.32 subiendo sostenida (avance con
+     esfuerzo). La constricción del canal amplifica ≈2× lo que marca el modelo. */
+  curTh: 0.30,   // kt en celda norte (final de ventana) que disparan la advertencia
+  curAmp: 2,     // amplificación del embudo del canal para la estimación mostrada
+  curCap: 72     // tope de score cuando la corriente pinta fuerte y sin estoa en la ventana
 };
 /* Calibración #5 (29-jul-2026): un 100 es imposible por definición — siempre hay algo de
    oleaje, corriente o viento. Escala re-anclada con testimonio: 19-jul = 98 (el mejor día
@@ -269,6 +280,9 @@ const URL_WX = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude
 const URL_SEA = `https://marine-api.open-meteo.com/v1/marine?latitude=${LAT}&longitude=${LON}`
   + `&hourly=wave_height,wave_period,swell_wave_height,swell_wave_period,sea_level_height_msl,sea_surface_temperature,ocean_current_velocity,ocean_current_direction`
   + `&timezone=America%2FCancun&forecast_days=${DAYS_FWD}&past_days=${DAYS_PAST}`;
+/* corriente en la salida norte del canal (calibración #6) — misma malla, celda distinta */
+const URL_CURN = `https://marine-api.open-meteo.com/v1/marine?latitude=21.21&longitude=-86.76`
+  + `&hourly=ocean_current_velocity&timezone=America%2FCancun&forecast_days=${DAYS_FWD}&past_days=${DAYS_PAST}`;
 /* multi-model ensemble (mismos modelos que muestra Windguru) */
 const MODELS_WX = [
   {id:"ecmwf_ifs025", name:"ECMWF",  w:0.38},
@@ -401,7 +415,8 @@ function hourScore(i){
   if(w!=null && g!=null && g-w>7) s-=8;                       // rachas irregulares
   if(pp!=null && pp>50) s-=10;                                // lluvia probable
   if(dir!=null && w!=null && dir>=200 && dir<=340 && w<10) s+=4; // terral suave aplana el mar
-  const cu=D.cur[i];
+  const cuS=D.cur[i], cuN=(D.curN&&D.curN[i]!=null)? D.curN[i] : null;
+  const cu = (cuS==null && cuN==null)? null : Math.max(cuS??0, cuN??0); // calibración #6: la mayor de las dos celdas
   if(cu!=null){
     // Calibración #5: la corriente penaliza desde el primer nudo (nunca es "gratis").
     // Con mareas vivas (luna llena/nueva) pulsa por zonas y arrastra — validado 28-jul:
@@ -482,11 +497,11 @@ function clarityLabel(f, rain){
 /* ================= data ================= */
 async function fetchAll(){
   const jget = u => fetch(u).then(r=> r.ok? r.json(): null).catch(()=>null);
-  const [wx, sea, wxm, seam, metno] = await Promise.all([
+  const [wx, sea, wxm, seam, metno, curn] = await Promise.all([
     fetch(URL_WX).then(r=>{ if(!r.ok) throw new Error("weather http "+r.status); return r.json(); }),
-    jget(URL_SEA), jget(URL_WXM), jget(URL_SEAM), jget(URL_METNO)
+    jget(URL_SEA), jget(URL_WXM), jget(URL_SEAM), jget(URL_METNO), jget(URL_CURN)
   ]);
-  return {wx, sea, wxm, seam, metno};
+  return {wx, sea, wxm, seam, metno, curn};
 }
 /* met.no: tiempos en UTC → clave horaria local de Cancún */
 function metnoToLocal(metno){
@@ -516,7 +531,7 @@ function consensus(sources, i){
   if(!n) return null;
   return {mean:sv/sw, min:mn, max:mx, spread:mx-mn, n};
 }
-function buildData(wx, sea, wxm, seam, metno){
+function buildData(wx, sea, wxm, seam, metno, curn){
   const t = wx.hourly.time.map(parseISO);
   const n = t.length;
   const pick = (o,k)=> (o && o.hourly && o.hourly[k]) ? o.hourly[k] : new Array(n).fill(null);
@@ -578,6 +593,15 @@ function buildData(wx, sea, wxm, seam, metno){
   d.nWaveSrc = d.waveSrc.length || 1;
 
   d.cur = d.cur.map(v=> v==null? null : +(v*0.539957).toFixed(2)); // km/h -> nudos
+  // calibración #6: corriente de la celda norte (salida del canal), alineada por hora
+  d.curN = new Array(n).fill(null);
+  if(curn && curn.hourly && curn.hourly.time){
+    const off = wx.hourly.time.indexOf(curn.hourly.time[0]);
+    curn.hourly.ocean_current_velocity.forEach((v,j)=>{
+      const k = (off>=0? off:0)+j;
+      if(k<n && v!=null) d.curN[k] = +(v*0.539957).toFixed(2); // km/h -> nudos
+    });
+  }
   d.hasCur = d.cur.some(v=>v!=null);
   d.score = t.map((_,i)=>hourScore(i));
   d.hasTide = d.tide.some(v=>v!=null);
@@ -635,7 +659,8 @@ function buildData(wx, sea, wxm, seam, metno){
       dawnWave: avg(dawnIdx.map(i=>d.wave[i])), dawnSwell: avg(dawnIdx.map(i=>d.swell[i])),
       dawnChan: avg(dawnIdx.map(i=>chanWave(i))), dawnRain: (()=>{const r=rainTurbAt(clIdx); return r==null?null:+r.toFixed(1);})(),
       dawnCloud: avg(dawnIdx.map(i=>d.cloud[i])), dawnPP: avg(dawnIdx.map(i=>d.pprob[i])),
-      dawnCur: avg(dawnIdx.map(i=>d.cur[i])), dawnCurDir: dawnIdx.length? d.curdir[dawnIdx[0]] : null
+      dawnCur: avg(dawnIdx.map(i=>d.cur[i])), dawnCurDir: dawnIdx.length? d.curdir[dawnIdx[0]] : null,
+      dawnCurN: avg(dawnIdx.map(i=>d.curN[i]))
     });
   });
   // index of "now" (first hour of today) — past_days offset
@@ -678,6 +703,22 @@ function buildData(wx, sea, wxm, seam, metno){
       else if(b<=a&&b<c) d.tideExt.push({i,kind:"baja"});
     }
   }
+  /* Calibración #6: regla del patrón de corriente — si la celda norte marca corriente
+     sostenida al FINAL de la ventana (≥curTh en las últimas 2 h) y no hay estoa
+     (pleamar/bajamar) dentro de la ventana que dé alivio, el score se topa en curCap
+     y se advierte. Anclas: 19-jul 0.27→sin tope ✓, 28-jul 0.245+estoa 9:00→sin tope ✓,
+     2-ago 0.32 sin estoa→tope 72 ✓ (real: "avance con esfuerzo"). */
+  d.days.forEach(day=>{
+    if(day.dawn==null || !day.dawnIdx || !day.dawnIdx.length) return;
+    const tail = day.dawnIdx.slice(-2).map(i=>d.curN[i]).filter(v=>v!=null);
+    if(!tail.length) return;
+    const tailAvg = tail.reduce((a,b)=>a+b,0)/tail.length;
+    const estoa = d.tideExt.some(e=> day.dawnIdx.includes(e.i));
+    if(tailAvg>=CANAL.curTh && !estoa){
+      day.dawn = Math.min(day.dawn, CANAL.curCap);
+      day.curWarn = true;
+    }
+  });
 }
 
 /* tide state at a given index */
@@ -763,10 +804,12 @@ function renderHero(){
   }
   if(D.hasCur && dEntry.dawnCur!=null){
     const spring = dEntry.moon.tide==="mareas vivas";
-    right.append(stat("Corriente", f1(dEntry.dawnCur)+" kt",
-      (dEntry.dawnCurDir!=null? "hacia el "+compass(dEntry.dawnCurDir)+" · ":"")
-      +(dEntry.dawnCur>1? "fuerte para nado":"manejable")
-      +(spring? " · a pulsos por zonas (mareas vivas)":"")));
+    const base = Math.max(dEntry.dawnCur, dEntry.dawnCurN ?? 0);
+    right.append(stat("Corriente", f1(base)+" kt",
+      "en canal ≈ "+f1(base*CANAL.curAmp)+" kt"
+      +(dEntry.dawnCurDir!=null? " · hacia el "+compass(dEntry.dawnCurDir):"")
+      +(dEntry.curWarn? " · probablemente FUERTE: confírmala en sitio"
+        : (spring? " · a pulsos por zonas (mareas vivas)" : " · manejable"))));
   }
   if(dEntry.conf){
     const f2=(v,dd)=>v==null?"":(Math.round(v*10**dd)/10**dd).toLocaleString("es-MX");
@@ -790,6 +833,7 @@ function renderHero(){
 }
 function verdict(d){
   if(d.dawn==null) return "Sin datos suficientes para esta ventana.";
+  if(d.curWarn) return "Viento y mar en calma, pero la corriente del canal pinta sostenida y sin estoa a la vista — confírmala en sitio antes de alejarte.";
   if(d.dawn>=75) return d.clarityL.lbl==="Cristalina"
     ? "Mar planchado y agua clara — día para madrugar."
     : "Condición de bonanza: viento y mar en calma.";
@@ -956,9 +1000,11 @@ function openDetail(day){
     stat("Olas", f(day.dawnWave)+" m", "en canal ≈ "+f(day.dawnChan)+" m · fondo "+f(day.dawnSwell)+" m"),
     stat("Claridad del agua", day.clarityL.lbl, day.clarityL.desc)
   );
-  if(D.hasCur && day.dawnCur!=null) grid.append(stat("Corriente amanecer", f(day.dawnCur)+" kt",
-    (day.dawnCurDir!=null? "hacia el "+compass(day.dawnCurDir):"")+(day.dawnCur>1? " · fuerte para nado":"")
-    +(day.moon.tide==="mareas vivas"? " · a pulsos por zonas (mareas vivas)":"")));
+  if(D.hasCur && day.dawnCur!=null) grid.append(stat("Corriente amanecer", f(Math.max(day.dawnCur, day.dawnCurN ?? 0))+" kt",
+    "en canal ≈ "+f(Math.max(day.dawnCur, day.dawnCurN ?? 0)*CANAL.curAmp)+" kt"
+    +(day.dawnCurDir!=null? " · hacia el "+compass(day.dawnCurDir):"")
+    +(day.curWarn? " · probablemente FUERTE: confírmala en sitio"
+      : (day.moon.tide==="mareas vivas"? " · a pulsos por zonas (mareas vivas)":""))));
   const moonVal = document.createDocumentFragment();
   moonVal.append(moonSVG(day.moon.frac,16), document.createTextNode(day.moon.name));
   grid.append(stat("Luna", moonVal, day.moon.illum+" % iluminada"+(day.moon.tide? " · "+day.moon.tide:"")));
@@ -1326,8 +1372,8 @@ async function boot(){
   $("#err").style.display="none";
   $("#app").textContent=""; $("#app").append(el("div","loading","Cargando pronóstico de viento, oleaje y marea…"));
   try{
-    const {wx, sea, wxm, seam, metno} = await fetchAll();
-    buildData(wx, sea, wxm, seam, metno);
+    const {wx, sea, wxm, seam, metno, curn} = await fetchAll();
+    buildData(wx, sea, wxm, seam, metno, curn);
     render();
   }catch(err){
     $("#app").textContent="";
